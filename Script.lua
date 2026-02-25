@@ -9,7 +9,7 @@
 
 ]]--
 
-task.wait(30);
+task.wait(5);
 if (game.PlaceId ~= 70503141143371) then
 	return;
 end
