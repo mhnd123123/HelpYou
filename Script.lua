@@ -580,7 +580,7 @@ local function CreateUI()
         KeySettings = {
             Title = "مطلوب مفتاح التفعيل",
             Subtitle = "أدخل المفتاح الصحيح لتشغيل السكربت",
-            Note = "المفتاح: Diving2030",
+            Note = "الرجاء ادخال المفتاح الصحيح",
             FileName = "Diving2030Key",  -- اسم ملف حفظ المفتاح
             SaveKey = true,  -- حفظ المفتاح بعد إدخاله أول مرة
             GrabKeyFromSite = false,  -- لا نجلب المفتاح من رابط
