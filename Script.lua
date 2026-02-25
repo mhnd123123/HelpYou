@@ -1,5 +1,6 @@
 -- Diving For Brainrots - Rayfield UI (الإصدار النهائي مع God Mode الحقيقي)
 -- تعديل مدة الضغط على E إلى 4 ثواني
+-- تعديل سرعة التنقل (Auto Farm / TP Base) إلى 60 ثابتة
 
 task.wait(30)
 
@@ -34,7 +35,6 @@ local function SaveSettings()
         SpeedEnabled = _G.SpeedEnabled or false,
         SpeedValue = _G.SpeedValue or 16,
         AutoPickupRare = _G.AutoPickupRare or false,
-        MoveSpeed = _G.MoveSpeed or 35,
         GodMode = _G.GodMode or false,
         DebugMode = _G.DebugMode or false,
         AutoBuy = {}
@@ -62,7 +62,6 @@ local function LoadSettings()
             _G.SpeedEnabled = data.SpeedEnabled or false
             _G.SpeedValue = data.SpeedValue or 16
             _G.AutoPickupRare = data.AutoPickupRare or false
-            _G.MoveSpeed = data.MoveSpeed or 35
             _G.GodMode = data.GodMode or false
             _G.DebugMode = data.DebugMode or false
             if data.AutoBuy then
@@ -80,12 +79,14 @@ _G.AutoFreeChest = _G.AutoFreeChest or false
 _G.SpeedEnabled = _G.SpeedEnabled or false
 _G.SpeedValue = _G.SpeedValue or 16
 _G.AutoPickupRare = _G.AutoPickupRare or false
-_G.MoveSpeed = _G.MoveSpeed or 35
 _G.GodMode = _G.GodMode or false
 _G.DebugMode = _G.DebugMode or false
 _G.FarmBusy = false
 _G.ReturningToBase = false
 for i=301,307 do _G["Buy"..i] = _G["Buy"..i] or false end
+
+-- سرعة التنقل ثابتة 60
+local NAVIGATION_SPEED = 60
 
 LoadSettings()
 _G.Running = true
@@ -129,8 +130,8 @@ local function StabilizePlayer(position)
     DebugPrint("تم تثبيت اللاعب في", position)
 end
 
--- ================== دالة الحركة السلسة ==================
-local function MoveToPositionSmooth(targetPosition, speed, stabilize)
+-- ================== دالة الحركة السلسة (بسرعة ثابتة 60) ==================
+local function MoveToPositionSmooth(targetPosition, stabilize)
     stabilize = stabilize == nil and true or stabilize
 
     local character = LocalPlayer.Character
@@ -194,7 +195,7 @@ local function MoveToPositionSmooth(targetPosition, speed, stabilize)
         end
 
         local direction = (targetPosition - currentPos).Unit
-        bv.Velocity = direction * speed
+        bv.Velocity = direction * NAVIGATION_SPEED  -- استخدام السرعة الثابتة 60
 
         for _, part in ipairs(character:GetDescendants()) do
             if part:IsA("BasePart") then
@@ -349,7 +350,7 @@ task.spawn(function()
     end
 end)
 
--- ================== حلقة السرعة ==================
+-- ================== حلقة السرعة (للمشي فقط) ==================
 task.spawn(function()
     while _G.Running do
         task.wait(0.5)
@@ -358,8 +359,11 @@ task.spawn(function()
             if c then
                 local h = c:FindFirstChild("Humanoid")
                 if h then
-                    if _G.SpeedEnabled then h.WalkSpeed = _G.SpeedValue
-                    elseif h.WalkSpeed ~= 16 then h.WalkSpeed = 16 end
+                    if _G.SpeedEnabled then 
+                        h.WalkSpeed = _G.SpeedValue
+                    elseif h.WalkSpeed ~= 16 then 
+                        h.WalkSpeed = 16 
+                    end
                 end
             end
         end)
@@ -371,7 +375,7 @@ local BasePosition = Vector3.new(-45, 38, -510)
 local function ReturnToBase()
     DebugPrint("بدء العودة إلى القاعدة")
     _G.ReturningToBase = true
-    MoveToPositionSmooth(BasePosition + Vector3.new(0, 50, 0), _G.MoveSpeed, false)
+    MoveToPositionSmooth(BasePosition + Vector3.new(0, 50, 0), false)  -- بدون تثبيت، سرعة ثابتة 60
     _G.ReturningToBase = false
     DebugPrint("اكتملت العودة إلى القاعدة")
 end
@@ -497,7 +501,7 @@ task.spawn(function()
             _G.FarmBusy = true
             DebugPrint("نتعامل مع الهدف:", target.Object.Name, "المسافة:", target.Distance)
 
-            MoveToPositionSmooth(target.Position + Vector3.new(0,3,0), _G.MoveSpeed, true)
+            MoveToPositionSmooth(target.Position + Vector3.new(0,3,0), true)  -- تثبيت بعد الوصول، سرعة ثابتة 60
             task.wait(0.75)
             InteractWithObject(target.Object, 4)
             ReturnToBase()
@@ -754,3 +758,4 @@ print("🛡️ God Mode: منع الموت نهائياً + إزالة القر�
 print("🐞 فعّل Debug Mode في تبويب Misc لرؤية التفاصيل")
 print("⏱️ توقيتات Auto Farm: دورة البحث 1.25ث، بعد الوصول 0.75ث، ضغط E 4ث، بعد فشل البحث 3ث")
 print("📍 TP Base بارتفاع 50 وحدة (آمن جداً)")
+print("⚡ سرعة التنقل (Auto Farm / TP Base) ثابتة 60")
