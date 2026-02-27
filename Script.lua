@@ -543,7 +543,7 @@ end
 local stands = {"stand1","stand2","stand3","stand4","stand5","stand6","stand7","stand8","stand9","stand10"}
 task.spawn(function()
     while _G.Running do
-        task.wait(300)
+        task.wait(900)
         pcall(function()
             if _G.AutoCollect then
                 for _, stand in ipairs(stands) do
@@ -603,7 +603,7 @@ local function CreateUI()
     local CollectTab = Window:CreateTab("Auto Collect", 4483362458)
 
     CollectTab:CreateToggle({
-        Name = "⚡ Auto Collect (Museum)",
+        Name = "⚡ Auto Collect (Base)",
         CurrentValue = _G.AutoCollect,
         Callback = function(s)
             _G.AutoCollect = s
