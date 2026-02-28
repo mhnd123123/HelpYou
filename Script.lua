@@ -1,6 +1,7 @@
--- Diving For Brainrots - Rayfield UI (الإصدار النهائي مع God Mode الحقيقي)
+-- Diving For Brainrots - Rayfield UI (بدون God Mode)
 -- تعديل مدة الضغط على E إلى 4 ثواني
 -- تعديل سرعة التنقل (Auto Farm / TP Base) إلى 60 ثابتة
+-- إضافة Auto Collect Reward (1-12) كل 60 ثانية
 
 task.wait(30)
 
@@ -35,8 +36,8 @@ local function SaveSettings()
         SpeedEnabled = _G.SpeedEnabled or false,
         SpeedValue = _G.SpeedValue or 16,
         AutoPickupRare = _G.AutoPickupRare or false,
-        GodMode = _G.GodMode or false,
         DebugMode = _G.DebugMode or false,
+        AutoCollectReward = _G.AutoCollectReward or false,
         AutoBuy = {}
     }
     local blocks = {301,302,303,304,305,306,307}
@@ -62,8 +63,8 @@ local function LoadSettings()
             _G.SpeedEnabled = data.SpeedEnabled or false
             _G.SpeedValue = data.SpeedValue or 16
             _G.AutoPickupRare = data.AutoPickupRare or false
-            _G.GodMode = data.GodMode or false
             _G.DebugMode = data.DebugMode or false
+            _G.AutoCollectReward = data.AutoCollectReward or false
             if data.AutoBuy then
                 for k,v in pairs(data.AutoBuy) do _G[k] = v or false end
             end
@@ -79,8 +80,8 @@ _G.AutoFreeChest = _G.AutoFreeChest or false
 _G.SpeedEnabled = _G.SpeedEnabled or false
 _G.SpeedValue = _G.SpeedValue or 16
 _G.AutoPickupRare = _G.AutoPickupRare or false
-_G.GodMode = _G.GodMode or false
 _G.DebugMode = _G.DebugMode or false
+_G.AutoCollectReward = _G.AutoCollectReward or false
 _G.FarmBusy = false
 _G.ReturningToBase = false
 for i=301,307 do _G["Buy"..i] = _G["Buy"..i] or false end
@@ -92,7 +93,6 @@ LoadSettings()
 _G.Running = true
 
 local CurrentStabilizer = nil
-local GodModeConnections = {}
 
 -- ================== دالة الطباعة للتصحيح ==================
 local function DebugPrint(...)
@@ -195,7 +195,7 @@ local function MoveToPositionSmooth(targetPosition, stabilize)
         end
 
         local direction = (targetPosition - currentPos).Unit
-        bv.Velocity = direction * NAVIGATION_SPEED  -- استخدام السرعة الثابتة 60
+        bv.Velocity = direction * NAVIGATION_SPEED
 
         for _, part in ipairs(character:GetDescendants()) do
             if part:IsA("BasePart") then
@@ -229,153 +229,12 @@ local function MoveToPositionSmooth(targetPosition, stabilize)
     return completed
 end
 
--- ================== God Mode الحقيقي (منع الضرر نهائياً) ==================
-local function SetupGodMode(character)
-    if not character then return end
-    local humanoid = character:FindFirstChild("Humanoid")
-    if not humanoid then return end
-
-    -- إزالة أي توصيلات سابقة لهذه الشخصية
-    if GodModeConnections[character] then
-        for _, conn in ipairs(GodModeConnections[character]) do
-            conn:Disconnect()
-        end
-    end
-
-    local connections = {}
-
-    -- 1. منع تغيير الصحة (Health) - نعيدها فوراً
-    connections[#connections+1] = humanoid:GetPropertyChangedSignal("Health"):Connect(function()
-        if _G.GodMode and humanoid and humanoid.Parent then
-            if humanoid.Health < humanoid.MaxHealth then
-                humanoid.Health = humanoid.MaxHealth
-            end
-        end
-    end)
-
-    -- 2. منع الموت
-    connections[#connections+1] = humanoid.StateChanged:Connect(function(_, newState)
-        if _G.GodMode and newState == Enum.HumanoidStateType.Dead then
-            humanoid.Health = humanoid.MaxHealth
-            humanoid:SetStateEnabled(Enum.HumanoidStateType.Dead, false)
-            wait(0.1)
-            humanoid:SetStateEnabled(Enum.HumanoidStateType.Dead, true)
-        end
-    end)
-
-    -- 3. منع الضرر من المصادر الخارجية (الأحداث)
-    for _, part in ipairs(character:GetDescendants()) do
-        if part:IsA("BasePart") then
-            connections[#connections+1] = part.Touched:Connect(function(hit)
-                if not _G.GodMode then return end
-                local parent = hit.Parent
-                if parent and parent:IsA("Model") then
-                    local name = parent.Name:lower()
-                    if name:find("shark") or name:find("requin") or name:find("enemy") or name:find("predator") then
-                        local hrp = character:FindFirstChild("HumanoidRootPart")
-                        if hrp and hit:IsA("BasePart") then
-                            hit.Velocity = (hit.Position - hrp.Position).Unit * 100
-                        end
-                    end
-                end
-            end)
-        end
-    end
-
-    -- 4. إعادة تعبئة الأكسجين
-    connections[#connections+1] = RunService.Heartbeat:Connect(function()
-        if not _G.GodMode then return end
-        if not character or not character.Parent then return end
-        for _, obj in ipairs(character:GetDescendants()) do
-            if obj:IsA("NumberValue") or obj:IsA("IntValue") then
-                local name = obj.Name:lower()
-                if name:find("breath") or name:find("oxygen") or name:find("drown") or name:find("air") then
-                    obj.Value = 100
-                end
-            end
-        end
-    end)
-
-    GodModeConnections[character] = connections
-end
-
--- تطبيق God Mode
-if LocalPlayer.Character then SetupGodMode(LocalPlayer.Character) end
-
-LocalPlayer.CharacterAdded:Connect(function(newCharacter)
-    DebugPrint("تم إعادة ظهور الشخصية، إعادة تطبيق God Mode")
-    task.wait(1)
-    SetupGodMode(newCharacter)
-    RemoveStabilizer()
-    _G.FarmBusy = false
-    _G.ReturningToBase = false
-end)
-
--- حلقة إزالة القروش
-task.spawn(function()
-    while _G.Running do
-        task.wait(1)
-        pcall(function()
-            if not _G.GodMode then return end
-            local character = LocalPlayer.Character
-            if not character then return end
-            local hrp = character:FindFirstChild("HumanoidRootPart")
-            if not hrp then return end
-            local parts = Workspace:FindPartsInRadius(hrp.Position, 50)
-            for _, part in ipairs(parts) do
-                local parent = part.Parent
-                if parent and parent:IsA("Model") then
-                    local name = parent.Name:lower()
-                    if name:find("shark") or name:find("requin") or name:find("tiburon") then
-                        parent:Destroy()
-                        DebugPrint("تم إزالة قرش:", parent.Name)
-                    end
-                end
-            end
-        end)
-    end
-end)
-
--- ================== حلقة Noclip ==================
-task.spawn(function()
-    while _G.Running do
-        task.wait(0.1)
-        pcall(function()
-            if _G.Noclip and LocalPlayer.Character then
-                for _, p in ipairs(LocalPlayer.Character:GetDescendants()) do
-                    if p:IsA("BasePart") then p.CanCollide = false end
-                end
-            end
-        end)
-    end
-end)
-
--- ================== حلقة السرعة (للمشي فقط) ==================
-task.spawn(function()
-    while _G.Running do
-        task.wait(0.5)
-        pcall(function()
-            local c = LocalPlayer.Character
-            if c then
-                local h = c:FindFirstChild("Humanoid")
-                if h then
-                    if _G.SpeedEnabled then 
-                        h.WalkSpeed = _G.SpeedValue
-                    elseif h.WalkSpeed ~= 16 then 
-                        h.WalkSpeed = 16 
-                    end
-                end
-            end
-        end)
-    end
-end)
-
 -- ================== العودة إلى القاعدة (بارتفاع 50) ==================
 local BasePosition = Vector3.new(-45, 38, -510)
 local function ReturnToBase()
     DebugPrint("بدء العودة إلى القاعدة")
     _G.ReturningToBase = true
-    MoveToPositionSmooth(BasePosition + Vector3.new(0, 50, 0), false)  -- بدون تثبيت، سرعة ثابتة 60
+    MoveToPositionSmooth(BasePosition + Vector3.new(0, 50, 0), false)
     _G.ReturningToBase = false
     DebugPrint("اكتملت العودة إلى القاعدة")
 end
@@ -407,7 +266,7 @@ local function InteractWithObject(obj, maxAttempts)
     end
     DebugPrint("لم نجد ClickDetector أو ProximityPrompt، نضغط E لمدة 4 ثوانٍ")
     game:GetService("VirtualInputManager"):SendKeyEvent(true, Enum.KeyCode.E, false, game)
-    task.wait(4)  -- تعديل من 2.6 إلى 4
+    task.wait(4)
     game:GetService("VirtualInputManager"):SendKeyEvent(false, Enum.KeyCode.E, false, game)
     return false
 end
@@ -501,7 +360,7 @@ task.spawn(function()
             _G.FarmBusy = true
             DebugPrint("نتعامل مع الهدف:", target.Object.Name, "المسافة:", target.Distance)
 
-            MoveToPositionSmooth(target.Position + Vector3.new(0,3,0), true)  -- تثبيت بعد الوصول، سرعة ثابتة 60
+            MoveToPositionSmooth(target.Position + Vector3.new(0,3,0), true)
             task.wait(0.75)
             InteractWithObject(target.Object, 4)
             ReturnToBase()
@@ -543,7 +402,7 @@ end
 local stands = {"stand1","stand2","stand3","stand4","stand5","stand6","stand7","stand8","stand9","stand10"}
 task.spawn(function()
     while _G.Running do
-        task.wait(2700)
+        task.wait(60)
         pcall(function()
             if _G.AutoCollect then
                 for _, stand in ipairs(stands) do
@@ -567,6 +426,56 @@ task.spawn(function()
     end
 end)
 
+-- ================== Auto Collect Reward (1-12) ==================
+task.spawn(function()
+    while _G.Running do
+        task.wait(60)
+        pcall(function()
+            if _G.AutoCollectReward then
+                for i = 1, 12 do
+                    ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("ClaimReward"):FireServer(i)
+                    task.wait(0.1)
+                end
+                DebugPrint("تم جمع المكافآت (1-12)")
+            end
+        end)
+    end
+end)
+
+-- ================== حلقة Noclip ==================
+task.spawn(function()
+    while _G.Running do
+        task.wait(0.1)
+        pcall(function()
+            if _G.Noclip and LocalPlayer.Character then
+                for _, p in ipairs(LocalPlayer.Character:GetDescendants()) do
+                    if p:IsA("BasePart") then p.CanCollide = false end
+                end
+            end
+        end)
+    end
+end)
+
+-- ================== حلقة السرعة (للمشي فقط) ==================
+task.spawn(function()
+    while _G.Running do
+        task.wait(0.5)
+        pcall(function()
+            local c = LocalPlayer.Character
+            if c then
+                local h = c:FindFirstChild("Humanoid")
+                if h then
+                    if _G.SpeedEnabled then 
+                        h.WalkSpeed = _G.SpeedValue
+                    elseif h.WalkSpeed ~= 16 then 
+                        h.WalkSpeed = 16 
+                    end
+                end
+            end
+        end)
+    end
+end)
+
 -- ================== إنشاء واجهة Rayfield ==================
 local function CreateUI()
     if not LocalPlayer:FindFirstChild("PlayerGui") then
@@ -578,7 +487,7 @@ local function CreateUI()
     local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
     local Window = Rayfield:CreateWindow({
         Name = "Diving For Brainrots",
-        LoadingTitle = "Ultimate God Mode",
+        LoadingTitle = "Ultimate Script",
         LoadingSubtitle = "Account: " .. LocalPlayer.Name,
     })
 
@@ -625,6 +534,15 @@ local function CreateUI()
         CurrentValue = _G.AutoPickupRare,
         Callback = function(s)
             _G.AutoPickupRare = s
+            SaveSettings()
+        end,
+    })
+
+    CollectTab:CreateToggle({
+        Name = "🎁 Auto Collect Reward (1-12)",
+        CurrentValue = _G.AutoCollectReward,
+        Callback = function(s)
+            _G.AutoCollectReward = s
             SaveSettings()
         end,
     })
@@ -678,16 +596,6 @@ local function CreateUI()
         end,
     })
 
-    local godModeToggle = MiscTab:CreateToggle({
-        Name = "🛡️ God Mode (Real Anti-Death)",
-        CurrentValue = _G.GodMode,
-        Callback = function(s)
-            _G.GodMode = s
-            SaveSettings()
-            print("God Mode:", s and "ON (حماية تامة من الموت)" or "OFF")
-        end,
-    })
-
     local debugToggle = MiscTab:CreateToggle({
         Name = "🐞 Debug Mode",
         CurrentValue = _G.DebugMode,
@@ -714,7 +622,6 @@ local function CreateUI()
             antiAfkToggle:Set(_G.AntiAfk)
             speedToggle:Set(_G.SpeedEnabled)
             speedSlider:Set(_G.SpeedValue)
-            godModeToggle:Set(_G.GodMode)
             debugToggle:Set(_G.DebugMode)
         end,
     })
@@ -752,10 +659,10 @@ task.spawn(CreateUI)
 
 end) -- نهاية NoErrors
 
-print("✅ Diving For Brainrots - الإصدار النهائي مع God Mode الحقيقي")
+print("✅ Diving For Brainrots - الإصدار بدون God Mode")
 print("🔍 يستهدف: Mythic, Exotic, Limited فقط (أي مسافة)")
-print("🛡️ God Mode: منع الموت نهائياً + إزالة القروش")
 print("🐞 فعّل Debug Mode في تبويب Misc لرؤية التفاصيل")
 print("⏱️ توقيتات Auto Farm: دورة البحث 1.25ث، بعد الوصول 0.75ث، ضغط E 4ث، بعد فشل البحث 3ث")
 print("📍 TP Base بارتفاع 50 وحدة (آمن جداً)")
 print("⚡ سرعة التنقل (Auto Farm / TP Base) ثابتة 60")
+print("🎁 Auto Collect Reward (1-12) كل 60 ثانية")
