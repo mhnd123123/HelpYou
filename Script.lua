@@ -420,7 +420,7 @@ local function FindRareUnderwaterTargets()
     if not hrp then return {} end
 
     local waterLevel = 2
-    local targetKeywords = {"Mythic", "Exotic", "Limited"}
+    local targetKeywords = {"Mythic", "Exotic", "Limited", "Secret"}
     local targets = {}
 
     for _, obj in ipairs(Workspace:GetDescendants()) do
@@ -621,7 +621,7 @@ local function CreateUI()
     })
 
     CollectTab:CreateToggle({
-        Name = "💎 Auto Pickup Rare (Mythic/Exotic/Limited)",
+        Name = "💎 Auto Pickup Rare (Mythic/Exotic/Secret/Limited)",
         CurrentValue = _G.AutoPickupRare,
         Callback = function(s)
             _G.AutoPickupRare = s
