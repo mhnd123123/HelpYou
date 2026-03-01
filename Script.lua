@@ -91,7 +91,7 @@ _G.ReturningToBase = false
 for i=301,307 do _G["Buy"..i] = _G["Buy"..i] or false end
 
 -- سرعة التنقل ثابتة 60
-local NAVIGATION_SPEED = 60
+local NAVIGATION_SPEED = 90
 
 LoadSettings()
 _G.Running = true
