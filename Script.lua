@@ -163,7 +163,7 @@ local function MoveToPositionSmooth(targetPosition, stabilize)
     bv.P = 30000
 
     local startTime = tick()
-    local maxDuration = 60
+    local maxDuration = 90
     local lastDistance = (targetPosition - hrp.Position).Magnitude
     local stuckCounter = 0
     local completed = false
