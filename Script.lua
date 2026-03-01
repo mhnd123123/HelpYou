@@ -2,6 +2,7 @@
 -- تعديل مدة الضغط على E إلى 4 ثواني
 -- تعديل سرعة التنقل (Auto Farm / TP Base) إلى 60 ثابتة
 -- إضافة Auto Collect Reward (1-12) كل 60 ثانية
+-- إضافة مسار آمن لتجنب الفراغ (Void) أثناء Auto Farm
 
 task.wait(30)
 
@@ -326,7 +327,33 @@ local function FindRareUnderwaterTargets()
     return targets
 end
 
--- ================== حلقة Auto Pickup الرئيسية ==================
+-- ================== دالة للتحرك بمسار آمن (تجنب الفراغ) ==================
+local function MoveToSafePosition(targetPos)
+    local char = LocalPlayer.Character
+    if not char then return false end
+    local hrp = char:FindFirstChild("HumanoidRootPart")
+    if not hrp then return false end
+    
+    -- حساب نقطة آمنة فوق الهدف (نضمن أن Y لا يقل عن -400)
+    local safeY = math.max(targetPos.Y, -400) -- نضمن أن Y لا ينزل تحت -400
+    local safePos = Vector3.new(targetPos.X, safeY + 50, targetPos.Z) -- 50 وحدة فوق الهدف
+    
+    DebugPrint("نتحرك إلى النقطة الآمنة:", safePos)
+    if not MoveToPositionSmooth(safePos, true) then
+        return false
+    end
+    
+    -- النزول العمودي إلى الهدف
+    DebugPrint("ننزل إلى الهدف:", targetPos)
+    local downPos = Vector3.new(targetPos.X, targetPos.Y + 3, targetPos.Z) -- نضيف 3 لتجنب الالتصاق
+    if not MoveToPositionSmooth(downPos, true) then
+        return false
+    end
+    
+    return true
+end
+
+-- ================== حلقة Auto Pickup الرئيسية (معدلة لاستخدام المسار الآمن) ==================
 task.spawn(function()
     local failedAttempts = 0
 
@@ -360,9 +387,13 @@ task.spawn(function()
             _G.FarmBusy = true
             DebugPrint("نتعامل مع الهدف:", target.Object.Name, "المسافة:", target.Distance)
 
-            MoveToPositionSmooth(target.Position + Vector3.new(0,3,0), true)
-            task.wait(0.75)
-            InteractWithObject(target.Object, 4)
+            -- استخدام المسار الآمن بدلاً من التحرك المباشر
+            if MoveToSafePosition(target.Position) then
+                task.wait(0.75)
+                InteractWithObject(target.Object, 4)
+            else
+                DebugPrint("فشل التحرك إلى الهدف، ربما بسبب عائق")
+            end
             ReturnToBase()
 
             _G.FarmBusy = false
@@ -402,7 +433,7 @@ end
 local stands = {"stand1","stand2","stand3","stand4","stand5","stand6","stand7","stand8","stand9","stand10"}
 task.spawn(function()
     while _G.Running do
-        task.wait(60)
+        task.wait(2700)
         pcall(function()
             if _G.AutoCollect then
                 for _, stand in ipairs(stands) do
@@ -659,10 +690,11 @@ task.spawn(CreateUI)
 
 end) -- نهاية NoErrors
 
-print("✅ Diving For Brainrots - الإصدار بدون God Mode")
-print("🔍 يستهدف: Mythic, Exotic, Limited فقط (أي مسافة)")
+print("✅ Diving For Brainrots - الإصدار بدون God Mode + مسار آمن")
+print("🔍 يستهدف: Mythic, Exotic, Limited, Secret (أي مسافة)")
+print("🛡️ مسار آمن: يتحرك إلى نقطة آمنة فوق الهدف ثم ينزل عمودياً")
 print("🐞 فعّل Debug Mode في تبويب Misc لرؤية التفاصيل")
-print("⏱️ توقيتات Auto Farm: دورة البحث 1.25ث، بعد الوصول 0.75ث، ضغط E 4ث، بعد فشل البحث 3ث")
-print("📍 TP Base بارتفاع 50 وحدة (آمن جداً)")
-print("⚡ سرعة التنقل (Auto Farm / TP Base) ثابتة 60")
+print("⏱️ توقيتات Auto Farm: دورة البحث 1.25ث، بعد الوصول 0.75ث، ضغط E 4ث")
+print("📍 TP Base بارتفاع 50 وحدة (آمن)")
+print("⚡ سرعة التنقل ثابتة 60")
 print("🎁 Auto Collect Reward (1-12) كل 60 ثانية")
