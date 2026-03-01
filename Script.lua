@@ -337,9 +337,9 @@ local function MoveToSafePosition(targetPos)
     local hrp = char:FindFirstChild("HumanoidRootPart")
     if not hrp then return false end
 
-    -- نقطة آمنة فوق الهدف (100 وحدة فوقه مع ضمان ألا يقل عن -400)
+    -- نقطة آمنة فوق الهدف 175 وحدة فوقه مع ضمان ألا يقل عن -400)
     local safeY = math.max(targetPos.Y, -400)
-    local safePos = Vector3.new(targetPos.X, safeY + 100, targetPos.Z)
+    local safePos = Vector3.new(targetPos.X, safeY + 175, targetPos.Z)
 
     DebugPrint("التحرك إلى النقطة الآمنة:", safePos)
     if not MoveToPositionSmooth(safePos, true) then
