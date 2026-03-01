@@ -1,9 +1,9 @@
--- Diving For Brainrots - Rayfield UI (النسخة النهائية مع مسار آمن + FPS Boost بزر)
+-- Diving For Brainrots - Rayfield UI (النسخة النهائية مع مسار آمن + FPS Boost القوي)
 -- الآلية: يروح إلى نقطة آمنة فوق الهدف ثم ينزل عمودياً
--- FPS Boost: زر واحد يخلي الجودة "زبالة" + يزيل الأشعة الحمراء
+-- FPS Boost: زر واحد يخلي الجودة "زبالة" بشكل متطرف + يزيل الأشعة الحمراء نهائياً
 -- البحث عن الأهداف: بدون حد أقصى للمسافة (أي هدف في أي مكان)
 
-task.wait(30)
+task.wait(28)
 
 if game.PlaceId ~= 70503141143371 then return end
 
@@ -519,15 +519,20 @@ task.spawn(function()
     end
 end)
 
--- ================== زر تحسين الأداء (FPS Boost + إزالة الأشعة) ==================
+-- ================== زر تحسين الأداء (FPS Boost القوي جداً) ==================
 local function ApplyFPSBoost()
     pcall(function()
-        -- 1. خفض جودة الرسومات إلى الحد الأدنى
+        -- 1. خفض جودة الرسومات إلى أدنى مستوى ممكن
         local userSettings = game:GetService("UserSettings")
         local gameSettings = userSettings:GetService("GameSettings")
         gameSettings.GraphicsQuality = 1
+        
+        -- محاولة استخدام hidden property لخفض أكثر (إذا كان متاحاً)
+        pcall(function()
+            sethiddenproperty(gameSettings, "GraphicsQuality", 0)
+        end)
 
-        -- 2. تعطيل جميع الظلال
+        -- 2. تعطيل جميع الظلال بشكل نهائي
         Lighting.GlobalShadows = false
         for _, obj in ipairs(Workspace:GetDescendants()) do
             if obj:IsA("BasePart") then
@@ -535,19 +540,26 @@ local function ApplyFPSBoost()
             end
         end
 
-        -- 3. تعطيل البارتيكالات بجميع أنواعها
+        -- 3. تعطيل جميع أنواع البارتيكالات والمؤثرات البصرية
         for _, obj in ipairs(Workspace:GetDescendants()) do
             if obj:IsA("ParticleEmitter") or obj:IsA("Trail") or obj:IsA("Smoke") or obj:IsA("Fire") or obj:IsA("Sparkles") or obj:IsA("Beam") then
                 obj.Enabled = false
             end
+            -- إزالة الديكالات (الملصقات) والأنسجة
+            if obj:IsA("Decal") or obj:IsA("Texture") or obj:IsA("SurfaceAppearance") then
+                obj.Transparency = 1
+            end
+            -- إزالة الأضواء
+            if obj:IsA("Light") then
+                obj.Enabled = false
+            end
         end
 
-        -- 4. تعطيل الإشعاعات والأشعة الحمراء (Beam, Laser, Glow, إلخ)
+        -- 4. تعطيل الإشعاعات والأشعة الحمراء بشكل خاص
         for _, obj in ipairs(Workspace:GetDescendants()) do
             if obj:IsA("Beam") or obj:IsA("Laser") or obj:IsA("Glow") or obj:IsA("Light") then
                 obj.Enabled = false
             end
-            -- بعض الأشعة تكون من نوع Attachment مع ParticleEmitter تابع
             if obj:IsA("Attachment") then
                 for _, child in ipairs(obj:GetChildren()) do
                     if child:IsA("ParticleEmitter") or child:IsA("Beam") then
@@ -557,34 +569,69 @@ local function ApplyFPSBoost()
             end
         end
 
-        -- 5. تعطيل الضباب والمؤثرات الجوية
+        -- 5. تعطيل الضباب والمؤثرات الجوية بالكامل
         Lighting.FogStart = 9e9
         Lighting.FogEnd = 9e9
         Lighting.Brightness = 1
-        Lighting.OutdoorAmbient = Color3.new(0.3, 0.3, 0.3)
+        Lighting.OutdoorAmbient = Color3.new(0.2, 0.2, 0.2)
+        Lighting.Ambient = Color3.new(0.2, 0.2, 0.2)
 
-        -- 6. تعطيل المؤثرات البصرية الأخرى
+        -- 6. إزالة أي تأثيرات لونية
         Lighting.ColorCorrection = nil
         Lighting.Bloom = nil
         Lighting.SunRays = nil
         Lighting.Atmosphere = nil
+        Lighting.Blur = nil
+        Lighting.DepthOfField = nil
 
-        -- 7. كتم الأصوات (خفض الصوت)
+        -- 7. كتم الأصوات
         for _, obj in ipairs(Workspace:GetDescendants()) do
             if obj:IsA("Sound") then
                 obj.Volume = 0
+                obj.Playing = false
             end
         end
 
-        -- 8. تقليل تفاصيل الماء
+        -- 8. تقليل جودة التضاريس (الماء والأرض)
         if Workspace.Terrain then
             Workspace.Terrain.WaterWaveSize = 0
             Workspace.Terrain.WaterWaveSpeed = 0
+            Workspace.Terrain.WaterReflectance = 0
+            Workspace.Terrain.WaterTransparency = 1
         end
 
-        print("✅ تم تطوير FPS Boost: الجودة صارت زبالة وتمت إزالة الأشعة الحمراء")
+        -- 9. إزالة النباتات والأشياء الزينة (اختياري - قد يمسح أشياء مهمة)
+        -- هذه خطوة قوية جداً، قد تسبب مشاكل، لذا نعلقها مؤقتاً
+        -- for _, obj in ipairs(Workspace:GetDescendants()) do
+        --     if obj:IsA("Model") and obj.Name:lower():find("plant") or obj.Name:lower():find("tree") then
+        --         obj:Destroy()
+        --     end
+        -- end
+
+        print("✅ FPS Boost قيد التشغيل: الجودة أصبحت زبالة والأشعة الحمراء اختفت")
     end)
 end
+
+-- حلقة للحفاظ على تعطيل المؤثرات كل 5 ثواني (لأن اللعبة قد تعيد تشغيلها)
+task.spawn(function()
+    while _G.Running do
+        task.wait(5)
+        pcall(function()
+            -- نطبق نفس الإعدادات مرة أخرى لضمان بقاء المؤثرات معطلة
+            for _, obj in ipairs(Workspace:GetDescendants()) do
+                if obj:IsA("ParticleEmitter") or obj:IsA("Trail") or obj:IsA("Smoke") or obj:IsA("Fire") or obj:IsA("Sparkles") or obj:IsA("Beam") then
+                    obj.Enabled = false
+                end
+                if obj:IsA("Beam") or obj:IsA("Laser") or obj:IsA("Glow") or obj:IsA("Light") then
+                    obj.Enabled = false
+                end
+                if obj:IsA("Decal") or obj:IsA("Texture") then
+                    obj.Transparency = 1
+                end
+            end
+        end)
+    end
+end)
 
 -- ================== إنشاء واجهة Rayfield ==================
 local function CreateUI()
@@ -777,10 +824,11 @@ task.spawn(CreateUI)
 
 end) -- نهاية NoErrors
 
-print("✅ Diving For Brainrots - النسخة النهائية مع المسار الآمن و FPS Boost بزر")
+print("✅ Diving For Brainrots - النسخة النهائية مع مسار آمن + FPS Boost القوي")
 print("🔍 يستهدف: Mythic, Exotic, Limited, Secret (أي مسافة)")
 print("🛡️ مسار آمن: يتحرك إلى نقطة آمنة فوق الهدف ثم ينزل عمودياً")
-print("⚡ FPS Boost: زر واحد يخلي الجودة زبالة + يزيل الأشعة الحمراء")
+print("⚡ FPS Boost: زر واحد يخلي الجودة زبالة (إزالة الظلال، البارتيكالات، الأشعة، الأضواء)")
+print("🔄 حلقة صيانة: تحافظ على تعطيل المؤثرات كل 5 ثواني")
 print("🧹 تنظيف الذاكرة: يتم جمع القمامة كل دقيقة")
 print("🐞 فعّل Debug Mode في تبويب Misc لرؤية التفاصيل")
 print("⏱️ توقيتات Auto Farm: دورة البحث 1.25ث، بعد الوصول 0.75ث، ضغط E 4ث")
