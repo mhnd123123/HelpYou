@@ -1,7 +1,9 @@
--- Diving For Brainrots - Rayfield UI (النسخة النهائية)
--- بدون God Mode، مع مسار آمن 100، تقليل الـ Lag، تنظيف الذاكرة، وتحسين الأداء (FPS Boost)
+-- Diving For Brainrots - Rayfield UI (النسخة النهائية مع مسار آمن + FPS Boost متطرف)
+-- الآلية: يروح إلى نقطة آمنة فوق الهدف ثم ينزل عمودياً
+-- FPS Boost: يخلي الجودة "زبالة" (تعطيل كل المؤثرات + أقل جودة)
+-- البحث عن الأهداف: بدون حد أقصى للمسافة (أي هدف في أي مكان)
 
-task.wait(30)
+task.wait(26)
 
 if game.PlaceId ~= 70503141143371 then return end
 
@@ -83,7 +85,7 @@ _G.SpeedValue = _G.SpeedValue or 16
 _G.AutoPickupRare = _G.AutoPickupRare or false
 _G.DebugMode = _G.DebugMode or false
 _G.AutoCollectReward = _G.AutoCollectReward or false
-_G.PerformanceMode = _G.PerformanceMode or false  -- ميزة تحسين الأداء
+_G.PerformanceMode = _G.PerformanceMode or false
 _G.FarmBusy = false
 _G.ReturningToBase = false
 for i=301,307 do _G["Buy"..i] = _G["Buy"..i] or false end
@@ -273,7 +275,7 @@ local function InteractWithObject(obj, maxAttempts)
     return false
 end
 
--- ================== البحث عن الأهداف النادرة تحت الماء (مُحسّن للأداء) ==================
+-- ================== البحث عن الأهداف النادرة تحت الماء (بدون حد أقصى) ==================
 local function FindRareUnderwaterTargets()
     local char = LocalPlayer.Character
     if not char then return {} end
@@ -283,7 +285,6 @@ local function FindRareUnderwaterTargets()
     local waterLevel = 2
     local targetKeywords = {"Mythic", "Exotic", "Limited", "Secret"}
     local targets = {}
-    local maxDistance = 500 -- نطاق البحث (يقلل الـ Lag)
 
     for _, obj in ipairs(Workspace:GetDescendants()) do
         if obj:IsA("BasePart") or obj:IsA("Model") then
@@ -313,16 +314,13 @@ local function FindRareUnderwaterTargets()
                 end
 
                 if pos and pos.Y < waterLevel then
-                    local distance = (hrp.Position - pos).Magnitude
-                    if distance < maxDistance then -- فقط الأهداف القريبة
-                        table.insert(targets, {
-                            Object = obj,
-                            Position = pos,
-                            Distance = distance,
-                            Keyword = matchedKeyword
-                        })
-                        DebugPrint("هدف نادر تحت الماء:", obj.Name, "عند Y=", pos.Y, "الكلمة:", matchedKeyword)
-                    end
+                    table.insert(targets, {
+                        Object = obj,
+                        Position = pos,
+                        Distance = (hrp.Position - pos).Magnitude,
+                        Keyword = matchedKeyword
+                    })
+                    DebugPrint("هدف نادر تحت الماء:", obj.Name, "عند Y=", pos.Y, "الكلمة:", matchedKeyword)
                 end
             end
         end
@@ -332,25 +330,25 @@ local function FindRareUnderwaterTargets()
     return targets
 end
 
--- ================== دالة للتحرك بمسار آمن (تجنب الفراغ) ==================
+-- ================== دالة للتحرك بمسار آمن (فوق الهدف ثم النزول عمودياً) ==================
 local function MoveToSafePosition(targetPos)
     local char = LocalPlayer.Character
     if not char then return false end
     local hrp = char:FindFirstChild("HumanoidRootPart")
     if not hrp then return false end
 
-    -- حساب نقطة آمنة فوق الهدف (نضمن أن Y لا يقل عن -400)
+    -- نقطة آمنة فوق الهدف (100 وحدة فوقه مع ضمان ألا يقل عن -400)
     local safeY = math.max(targetPos.Y, -400)
-    local safePos = Vector3.new(targetPos.X, safeY + 100, targetPos.Z) -- 100 وحدة فوق الهدف
+    local safePos = Vector3.new(targetPos.X, safeY + 100, targetPos.Z)
 
-    DebugPrint("نتحرك إلى النقطة الآمنة:", safePos)
+    DebugPrint("التحرك إلى النقطة الآمنة:", safePos)
     if not MoveToPositionSmooth(safePos, true) then
         return false
     end
 
-    -- النزول العمودي إلى الهدف
-    DebugPrint("ننزل إلى الهدف:", targetPos)
+    -- النزول العمودي إلى الهدف (مع إضافة 3 وحدات لتجنب الالتصاق)
     local downPos = Vector3.new(targetPos.X, targetPos.Y + 3, targetPos.Z)
+    DebugPrint("النزول إلى الهدف:", downPos)
     if not MoveToPositionSmooth(downPos, true) then
         return false
     end
@@ -358,7 +356,7 @@ local function MoveToSafePosition(targetPos)
     return true
 end
 
--- ================== حلقة Auto Pickup الرئيسية (معدلة لاستخدام المسار الآمن) ==================
+-- ================== حلقة Auto Pickup الرئيسية (باستخدام المسار الآمن) ==================
 task.spawn(function()
     local failedAttempts = 0
 
@@ -396,10 +394,10 @@ task.spawn(function()
                 task.wait(0.75)
                 InteractWithObject(target.Object, 4)
             else
-                DebugPrint("فشل التحرك إلى الهدف، ربما بسبب عائق")
+                DebugPrint("فشل التحرك إلى الهدف")
             end
-            ReturnToBase()
 
+            ReturnToBase()
             _G.FarmBusy = false
         end)
     end
@@ -408,7 +406,7 @@ end)
 -- ================== Anti Afk (بتردد أقل) ==================
 task.spawn(function()
     while _G.Running do
-        task.wait(120) -- كل دقيقتين بدل دقيقة (يقلل الـ Lag)
+        task.wait(120)
         pcall(function()
             if _G.AntiAfk and LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("Humanoid") then
                 LocalPlayer.Character.Humanoid:Move(Vector3.new(0,0,0), false)
@@ -423,7 +421,7 @@ end)
 for _, id in ipairs({301,302,303,304,305,306,307}) do
     task.spawn(function()
         while _G.Running do
-            task.wait(1.0) -- كل ثانية بدل 0.35 (يقلل الـ Lag)
+            task.wait(1.0)
             pcall(function()
                 if _G["Buy"..id] then
                     ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("PurchaseStock"):InvokeServer(id, 1, "LuckyBlocksStock")
@@ -437,7 +435,7 @@ end
 local stands = {"stand1","stand2","stand3","stand4","stand5","stand6","stand7","stand8","stand9","stand10"}
 task.spawn(function()
     while _G.Running do
-        task.wait(3000) -- كل 50 دقيقة بدل 45 دقيقة (يقلل الـ Lag)
+        task.wait(3000)
         pcall(function()
             if _G.AutoCollect then
                 for _, stand in ipairs(stands) do
@@ -452,7 +450,7 @@ end)
 -- ================== Auto Free Exclusive Chest (بتردد أقل) ==================
 task.spawn(function()
     while _G.Running do
-        task.wait(120) -- كل دقيقتين بدل دقيقة (يقلل الـ Lag)
+        task.wait(120)
         pcall(function()
             if _G.AutoFreeChest then
                 ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("ClaimCustomReward"):FireServer(1)
@@ -464,7 +462,7 @@ end)
 -- ================== Auto Collect Reward (1-12) (بتردد أقل) ==================
 task.spawn(function()
     while _G.Running do
-        task.wait(120) -- كل دقيقتين بدل دقيقة (يقلل الـ Lag)
+        task.wait(120)
         pcall(function()
             if _G.AutoCollectReward then
                 for i = 1, 12 do
@@ -480,7 +478,7 @@ end)
 -- ================== حلقة Noclip (مُحسّنة للأداء) ==================
 task.spawn(function()
     while _G.Running do
-        task.wait(0.5) -- كل نصف ثانية بدل 0.1 (يقلل الـ Lag بشكل كبير)
+        task.wait(0.5)
         pcall(function()
             if _G.Noclip and LocalPlayer.Character then
                 for _, p in ipairs(LocalPlayer.Character:GetDescendants()) do
@@ -494,7 +492,7 @@ end)
 -- ================== حلقة السرعة (مُحسّنة للأداء) ==================
 task.spawn(function()
     while _G.Running do
-        task.wait(1.0) -- كل ثانية بدل 0.5 (يقلل الـ Lag)
+        task.wait(1.0)
         pcall(function()
             local c = LocalPlayer.Character
             if c then
@@ -514,11 +512,9 @@ end)
 -- ================== حلقة تنظيف الذاكرة (Garbage Collection) ==================
 task.spawn(function()
     while _G.Running do
-        task.wait(60) -- كل دقيقة
+        task.wait(60)
         pcall(function()
-            -- تنظيف الكائنات المؤقتة
             Debris:AddItem(Instance.new("Part"), 0)
-            -- استدعاء جمع القمامة
             collectgarbage()
             collectgarbage("collect")
             DebugPrint("تم تنظيف الذاكرة")
@@ -526,78 +522,92 @@ task.spawn(function()
     end
 end)
 
--- ================== ميزة تحسين الأداء (FPS Boost) ==================
-local function ApplyPerformanceMode(state)
+-- ================== ميزة تحسين الأداء (FPS Boost) المتطرفة ==================
+local function ApplyExtremePerformanceMode(state)
     if state then
         pcall(function()
-            -- تعيين أقل جودة رسومية
+            -- 1. خفض جودة الرسومات إلى الحد الأدنى
             local userSettings = game:GetService("UserSettings")
             local gameSettings = userSettings:GetService("GameSettings")
-            gameSettings.GraphicsQuality = 1
+            gameSettings.GraphicsQuality = 0 -- أقل من 1؟ لو 1 هو الأقل، نخليه 1.
             
-            -- تعطيل الظلال العامة
+            -- 2. تعطيل جميع الظلال
             Lighting.GlobalShadows = false
-            
-            -- تعطيل الظلال لجميع الأجزاء
             for _, obj in ipairs(Workspace:GetDescendants()) do
                 if obj:IsA("BasePart") then
                     obj.CastShadow = false
                 end
             end
-            
-            -- تعطيل البارتيكلات الموجودة
+
+            -- 3. تعطيل البارتيكالات بجميع أنواعها
             for _, obj in ipairs(Workspace:GetDescendants()) do
-                if obj:IsA("ParticleEmitter") or obj:IsA("Trail") or obj:IsA("Smoke") or obj:IsA("Fire") or obj:IsA("Sparkles") then
+                if obj:IsA("ParticleEmitter") or obj:IsA("Trail") or obj:IsA("Smoke") or obj:IsA("Fire") or obj:IsA("Sparkles") or obj:IsA("Beam") then
                     obj.Enabled = false
                 end
             end
-            
-            -- تعطيل البارتيكلات في الشخصية
-            local char = LocalPlayer.Character
-            if char then
-                for _, obj in ipairs(char:GetDescendants()) do
-                    if obj:IsA("ParticleEmitter") or obj:IsA("Trail") or obj:IsA("Smoke") or obj:IsA("Fire") or obj:IsA("Sparkles") then
-                        obj.Enabled = false
-                    end
+
+            -- 4. تعطيل الضباب والمؤثرات الجوية
+            Lighting.FogStart = 9e9
+            Lighting.FogEnd = 9e9
+            Lighting.Brightness = 1
+            Lighting.OutdoorAmbient = Color3.new(0.3, 0.3, 0.3) -- أغمق
+
+            -- 5. تعطيل المؤثرات البصرية الأخرى (Post Effects)
+            Lighting.ColorCorrection = nil -- لو موجود
+            Lighting.Bloom = nil
+            Lighting.SunRays = nil
+            Lighting.Atmosphere = nil
+
+            -- 6. إزالة النباتات والأشياء غير الضرورية (اختياري - قد يسبب مشاكل)
+            -- لكن نخاف نمسح أشياء مهمة للعبة، نتركها.
+
+            -- 7. تعطيل الضوضاء والأمطار (إذا وجدت)
+            for _, obj in ipairs(Workspace:GetDescendants()) do
+                if obj:IsA("Sound") then
+                    obj.Volume = 0 -- كتم الأصوات (يقلل الأداء قليلاً)
+                end
+                if obj:IsA("Part") and obj.Material == Enum.Material.Water then
+                    -- يمكن تقليل جودة الماء لكن صعب.
                 end
             end
-            
-            -- تعديل الإضاءة لتقليل المؤثرات
-            Lighting.Brightness = 1
-            Lighting.OutdoorAmbient = Color3.new(0.5, 0.5, 0.5)
-            Lighting.FogStart = 0
-            Lighting.FogEnd = 100000
-            
-            DebugPrint("تم تطبيق وضع تحسين الأداء")
+
+            -- 8. تقليل مجال الرؤية (RenderStepped) -> ما نقدر نغيره بسهولة، لكن ممكن نحاول تعطيل الـ Terrain التفاصيل
+            if Workspace.Terrain then
+                Workspace.Terrain.WaterWaveSize = 0
+                Workspace.Terrain.WaterWaveSpeed = 0
+            end
+
+            DebugPrint("تم تطبيق وضع تحسين الأداء المتطرف (الجودة زبالة)")
         end)
     else
-        -- إعادة الإعدادات الافتراضية (اختياري، يمكنك تركها أو إضافتها)
         pcall(function()
+            -- إعادة الإعدادات الافتراضية تقريبياً (لكن ليس كلها)
             Lighting.GlobalShadows = true
             Lighting.Brightness = 2
             Lighting.OutdoorAmbient = Color3.new(0.6, 0.6, 0.6)
             Lighting.FogStart = 10
             Lighting.FogEnd = 1000
+            -- إعادة تشغيل البارتيكالات صعب لأننا لا نحتفظ بحالتها
+            DebugPrint("تم إلغاء وضع تحسين الأداء (قد تحتاج إعادة الدخول للعودة كاملة)")
         end)
-        DebugPrint("تم إلغاء وضع تحسين الأداء")
     end
 end
 
--- حلقة إضافية لتعطيل البارتيكلات الجديدة إذا كان وضع الأداء مفعلاً
+-- حلقة للحفاظ على تعطيل البارتيكالات إذا كان الوضع مفعلاً (كل 3 ثواني)
 task.spawn(function()
     while _G.Running do
-        task.wait(5) -- كل 5 ثواني
+        task.wait(3)
         pcall(function()
             if _G.PerformanceMode then
                 for _, obj in ipairs(Workspace:GetDescendants()) do
-                    if obj:IsA("ParticleEmitter") or obj:IsA("Trail") or obj:IsA("Smoke") or obj:IsA("Fire") or obj:IsA("Sparkles") then
+                    if obj:IsA("ParticleEmitter") or obj:IsA("Trail") or obj:IsA("Smoke") or obj:IsA("Fire") or obj:IsA("Sparkles") or obj:IsA("Beam") then
                         obj.Enabled = false
                     end
                 end
                 local char = LocalPlayer.Character
                 if char then
                     for _, obj in ipairs(char:GetDescendants()) do
-                        if obj:IsA("ParticleEmitter") or obj:IsA("Trail") or obj:IsA("Smoke") or obj:IsA("Fire") or obj:IsA("Sparkles") then
+                        if obj:IsA("ParticleEmitter") or obj:IsA("Trail") or obj:IsA("Smoke") or obj:IsA("Fire") or obj:IsA("Sparkles") or obj:IsA("Beam") then
                             obj.Enabled = false
                         end
                     end
@@ -610,8 +620,8 @@ end)
 -- تطبيق وضع الأداء إذا كان مفعلاً من الإعدادات المحفوظة
 if _G.PerformanceMode then
     task.spawn(function()
-        task.wait(1) -- تأخير بسيط لضمان تحميل اللعبة
-        ApplyPerformanceMode(true)
+        task.wait(1)
+        ApplyExtremePerformanceMode(true)
     end)
 end
 
@@ -626,7 +636,7 @@ local function CreateUI()
     local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
     local Window = Rayfield:CreateWindow({
         Name = "Diving For Brainrots",
-        LoadingTitle = "Ultimate Script (FPS Boost)",
+        LoadingTitle = "Ultimate Script (FPS Boost Extreme)",
         LoadingSubtitle = "Account: " .. LocalPlayer.Name,
     })
 
@@ -669,7 +679,7 @@ local function CreateUI()
     })
 
     CollectTab:CreateToggle({
-        Name = "💎 Auto Pickup Rare (Mythic/Exotic/Secret/Limited)",
+        Name = "💎 Auto Pickup Rare (Mythic/Exotic/Secret/Limited) [مسار آمن + أي بعد]",
         CurrentValue = _G.AutoPickupRare,
         Callback = function(s)
             _G.AutoPickupRare = s
@@ -735,13 +745,12 @@ local function CreateUI()
         end,
     })
 
-    -- Toggle تحسين الأداء (FPS Boost)
     local performanceToggle = MiscTab:CreateToggle({
-        Name = "⚡ وضع تحسين الأداء (FPS Boost)",
+        Name = "⚡ FPS Boost (جودة زبالة) - متطرف",
         CurrentValue = _G.PerformanceMode,
         Callback = function(state)
             _G.PerformanceMode = state
-            ApplyPerformanceMode(state)
+            ApplyExtremePerformanceMode(state)
             SaveSettings()
         end,
     })
@@ -810,14 +819,13 @@ task.spawn(CreateUI)
 
 end) -- نهاية NoErrors
 
-print("✅ Diving For Brainrots - النسخة النهائية مع تحسين الأداء")
+print("✅ Diving For Brainrots - النسخة النهائية مع المسار الآمن و FPS Boost المتطرف")
 print("🔍 يستهدف: Mythic, Exotic, Limited, Secret (أي مسافة)")
-print("🛡️ مسار آمن: يتحرك إلى نقطة آمنة 100 وحدة فوق الهدف ثم ينزل عمودياً")
-print("⚡ تقليل الـ Lag: تم زيادة توقيتات الحلقات لتخفيف الضغط")
+print("🛡️ مسار آمن: يتحرك إلى نقطة آمنة فوق الهدف ثم ينزل عمودياً")
+print("⚡ FPS Boost: يخلي الجودة زبالة (تعطيل الظلال، البارتيكالات، الضباب، المؤثرات)")
 print("🧹 تنظيف الذاكرة: يتم جمع القمامة كل دقيقة")
-print("🎮 تحسين الأداء: تعطيل البارتيكلات والظلال لتسريع FPS")
 print("🐞 فعّل Debug Mode في تبويب Misc لرؤية التفاصيل")
 print("⏱️ توقيتات Auto Farm: دورة البحث 1.25ث، بعد الوصول 0.75ث، ضغط E 4ث")
 print("📍 TP Base بارتفاع 50 وحدة (آمن)")
 print("⚡ سرعة التنقل ثابتة 60")
-print("🎁 Auto Collect Reward (1-12) كل دقيقتين (لتخفيف الـ Lag)")
+print("🎁 Auto Collect Reward (1-12) كل دقيقتين")
