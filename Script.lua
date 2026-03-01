@@ -1,7 +1,7 @@
 -- Diving For Brainrots - Rayfield UI (النسخة النهائية)
 -- بدون God Mode، مع مسار آمن 100، تقليل الـ Lag، تنظيف الذاكرة، وتحسين الأداء (FPS Boost)
 
-task.wait(12)
+task.wait(30)
 
 if game.PlaceId ~= 70503141143371 then return end
 
