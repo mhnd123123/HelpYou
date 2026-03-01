@@ -1,9 +1,9 @@
--- Diving For Brainrots - Rayfield UI (النسخة النهائية مع مسار آمن + FPS Boost القوي)
+-- Diving For Brainrots - Rayfield UI (النسخة النهائية مع مسار آمن + FPS Boost متطرف)
 -- الآلية: يروح إلى نقطة آمنة فوق الهدف ثم ينزل عمودياً
--- FPS Boost: زر واحد يخلي الجودة "زبالة" بشكل متطرف + يزيل الأشعة الحمراء نهائياً
+-- FPS Boost: يخلي الجودة "زبالة" (تعطيل كل المؤثرات + أقل جودة)
 -- البحث عن الأهداف: بدون حد أقصى للمسافة (أي هدف في أي مكان)
 
-task.wait(28)
+task.wait(25)
 
 if game.PlaceId ~= 70503141143371 then return end
 
@@ -39,6 +39,7 @@ local function SaveSettings()
         AutoPickupRare = _G.AutoPickupRare or false,
         DebugMode = _G.DebugMode or false,
         AutoCollectReward = _G.AutoCollectReward or false,
+        PerformanceMode = _G.PerformanceMode or false,
         AutoBuy = {}
     }
     local blocks = {301,302,303,304,305,306,307}
@@ -66,6 +67,7 @@ local function LoadSettings()
             _G.AutoPickupRare = data.AutoPickupRare or false
             _G.DebugMode = data.DebugMode or false
             _G.AutoCollectReward = data.AutoCollectReward or false
+            _G.PerformanceMode = data.PerformanceMode or false
             if data.AutoBuy then
                 for k,v in pairs(data.AutoBuy) do _G[k] = v or false end
             end
@@ -83,6 +85,7 @@ _G.SpeedValue = _G.SpeedValue or 16
 _G.AutoPickupRare = _G.AutoPickupRare or false
 _G.DebugMode = _G.DebugMode or false
 _G.AutoCollectReward = _G.AutoCollectReward or false
+_G.PerformanceMode = _G.PerformanceMode or false
 _G.FarmBusy = false
 _G.ReturningToBase = false
 for i=301,307 do _G["Buy"..i] = _G["Buy"..i] or false end
@@ -519,119 +522,108 @@ task.spawn(function()
     end
 end)
 
--- ================== زر تحسين الأداء (FPS Boost القوي جداً) ==================
-local function ApplyFPSBoost()
-    pcall(function()
-        -- 1. خفض جودة الرسومات إلى أدنى مستوى ممكن
-        local userSettings = game:GetService("UserSettings")
-        local gameSettings = userSettings:GetService("GameSettings")
-        gameSettings.GraphicsQuality = 1
-        
-        -- محاولة استخدام hidden property لخفض أكثر (إذا كان متاحاً)
+-- ================== ميزة تحسين الأداء (FPS Boost) المتطرفة ==================
+local function ApplyExtremePerformanceMode(state)
+    if state then
         pcall(function()
-            sethiddenproperty(gameSettings, "GraphicsQuality", 0)
-        end)
-
-        -- 2. تعطيل جميع الظلال بشكل نهائي
-        Lighting.GlobalShadows = false
-        for _, obj in ipairs(Workspace:GetDescendants()) do
-            if obj:IsA("BasePart") then
-                obj.CastShadow = false
-            end
-        end
-
-        -- 3. تعطيل جميع أنواع البارتيكالات والمؤثرات البصرية
-        for _, obj in ipairs(Workspace:GetDescendants()) do
-            if obj:IsA("ParticleEmitter") or obj:IsA("Trail") or obj:IsA("Smoke") or obj:IsA("Fire") or obj:IsA("Sparkles") or obj:IsA("Beam") then
-                obj.Enabled = false
-            end
-            -- إزالة الديكالات (الملصقات) والأنسجة
-            if obj:IsA("Decal") or obj:IsA("Texture") or obj:IsA("SurfaceAppearance") then
-                obj.Transparency = 1
-            end
-            -- إزالة الأضواء
-            if obj:IsA("Light") then
-                obj.Enabled = false
-            end
-        end
-
-        -- 4. تعطيل الإشعاعات والأشعة الحمراء بشكل خاص
-        for _, obj in ipairs(Workspace:GetDescendants()) do
-            if obj:IsA("Beam") or obj:IsA("Laser") or obj:IsA("Glow") or obj:IsA("Light") then
-                obj.Enabled = false
-            end
-            if obj:IsA("Attachment") then
-                for _, child in ipairs(obj:GetChildren()) do
-                    if child:IsA("ParticleEmitter") or child:IsA("Beam") then
-                        child.Enabled = false
-                    end
+            -- 1. خفض جودة الرسومات إلى الحد الأدنى
+            local userSettings = game:GetService("UserSettings")
+            local gameSettings = userSettings:GetService("GameSettings")
+            gameSettings.GraphicsQuality = 0 -- أقل من 1؟ لو 1 هو الأقل، نخليه 1.
+            
+            -- 2. تعطيل جميع الظلال
+            Lighting.GlobalShadows = false
+            for _, obj in ipairs(Workspace:GetDescendants()) do
+                if obj:IsA("BasePart") then
+                    obj.CastShadow = false
                 end
             end
-        end
 
-        -- 5. تعطيل الضباب والمؤثرات الجوية بالكامل
-        Lighting.FogStart = 9e9
-        Lighting.FogEnd = 9e9
-        Lighting.Brightness = 1
-        Lighting.OutdoorAmbient = Color3.new(0.2, 0.2, 0.2)
-        Lighting.Ambient = Color3.new(0.2, 0.2, 0.2)
-
-        -- 6. إزالة أي تأثيرات لونية
-        Lighting.ColorCorrection = nil
-        Lighting.Bloom = nil
-        Lighting.SunRays = nil
-        Lighting.Atmosphere = nil
-        Lighting.Blur = nil
-        Lighting.DepthOfField = nil
-
-        -- 7. كتم الأصوات
-        for _, obj in ipairs(Workspace:GetDescendants()) do
-            if obj:IsA("Sound") then
-                obj.Volume = 0
-                obj.Playing = false
-            end
-        end
-
-        -- 8. تقليل جودة التضاريس (الماء والأرض)
-        if Workspace.Terrain then
-            Workspace.Terrain.WaterWaveSize = 0
-            Workspace.Terrain.WaterWaveSpeed = 0
-            Workspace.Terrain.WaterReflectance = 0
-            Workspace.Terrain.WaterTransparency = 1
-        end
-
-        -- 9. إزالة النباتات والأشياء الزينة (اختياري - قد يمسح أشياء مهمة)
-        -- هذه خطوة قوية جداً، قد تسبب مشاكل، لذا نعلقها مؤقتاً
-        -- for _, obj in ipairs(Workspace:GetDescendants()) do
-        --     if obj:IsA("Model") and obj.Name:lower():find("plant") or obj.Name:lower():find("tree") then
-        --         obj:Destroy()
-        --     end
-        -- end
-
-        print("✅ FPS Boost قيد التشغيل: الجودة أصبحت زبالة والأشعة الحمراء اختفت")
-    end)
-end
-
--- حلقة للحفاظ على تعطيل المؤثرات كل 5 ثواني (لأن اللعبة قد تعيد تشغيلها)
-task.spawn(function()
-    while _G.Running do
-        task.wait(5)
-        pcall(function()
-            -- نطبق نفس الإعدادات مرة أخرى لضمان بقاء المؤثرات معطلة
+            -- 3. تعطيل البارتيكالات بجميع أنواعها
             for _, obj in ipairs(Workspace:GetDescendants()) do
                 if obj:IsA("ParticleEmitter") or obj:IsA("Trail") or obj:IsA("Smoke") or obj:IsA("Fire") or obj:IsA("Sparkles") or obj:IsA("Beam") then
                     obj.Enabled = false
                 end
-                if obj:IsA("Beam") or obj:IsA("Laser") or obj:IsA("Glow") or obj:IsA("Light") then
-                    obj.Enabled = false
+            end
+
+            -- 4. تعطيل الضباب والمؤثرات الجوية
+            Lighting.FogStart = 9e9
+            Lighting.FogEnd = 9e9
+            Lighting.Brightness = 1
+            Lighting.OutdoorAmbient = Color3.new(0.3, 0.3, 0.3) -- أغمق
+
+            -- 5. تعطيل المؤثرات البصرية الأخرى (Post Effects)
+            Lighting.ColorCorrection = nil -- لو موجود
+            Lighting.Bloom = nil
+            Lighting.SunRays = nil
+            Lighting.Atmosphere = nil
+
+            -- 6. إزالة النباتات والأشياء غير الضرورية (اختياري - قد يسبب مشاكل)
+            -- لكن نخاف نمسح أشياء مهمة للعبة، نتركها.
+
+            -- 7. تعطيل الضوضاء والأمطار (إذا وجدت)
+            for _, obj in ipairs(Workspace:GetDescendants()) do
+                if obj:IsA("Sound") then
+                    obj.Volume = 0 -- كتم الأصوات (يقلل الأداء قليلاً)
                 end
-                if obj:IsA("Decal") or obj:IsA("Texture") then
-                    obj.Transparency = 1
+                if obj:IsA("Part") and obj.Material == Enum.Material.Water then
+                    -- يمكن تقليل جودة الماء لكن صعب.
+                end
+            end
+
+            -- 8. تقليل مجال الرؤية (RenderStepped) -> ما نقدر نغيره بسهولة، لكن ممكن نحاول تعطيل الـ Terrain التفاصيل
+            if Workspace.Terrain then
+                Workspace.Terrain.WaterWaveSize = 0
+                Workspace.Terrain.WaterWaveSpeed = 0
+            end
+
+            DebugPrint("تم تطبيق وضع تحسين الأداء المتطرف (الجودة زبالة)")
+        end)
+    else
+        pcall(function()
+            -- إعادة الإعدادات الافتراضية تقريبياً (لكن ليس كلها)
+            Lighting.GlobalShadows = true
+            Lighting.Brightness = 2
+            Lighting.OutdoorAmbient = Color3.new(0.6, 0.6, 0.6)
+            Lighting.FogStart = 10
+            Lighting.FogEnd = 1000
+            -- إعادة تشغيل البارتيكالات صعب لأننا لا نحتفظ بحالتها
+            DebugPrint("تم إلغاء وضع تحسين الأداء (قد تحتاج إعادة الدخول للعودة كاملة)")
+        end)
+    end
+end
+
+-- حلقة للحفاظ على تعطيل البارتيكالات إذا كان الوضع مفعلاً (كل 3 ثواني)
+task.spawn(function()
+    while _G.Running do
+        task.wait(3)
+        pcall(function()
+            if _G.PerformanceMode then
+                for _, obj in ipairs(Workspace:GetDescendants()) do
+                    if obj:IsA("ParticleEmitter") or obj:IsA("Trail") or obj:IsA("Smoke") or obj:IsA("Fire") or obj:IsA("Sparkles") or obj:IsA("Beam") then
+                        obj.Enabled = false
+                    end
+                end
+                local char = LocalPlayer.Character
+                if char then
+                    for _, obj in ipairs(char:GetDescendants()) do
+                        if obj:IsA("ParticleEmitter") or obj:IsA("Trail") or obj:IsA("Smoke") or obj:IsA("Fire") or obj:IsA("Sparkles") or obj:IsA("Beam") then
+                            obj.Enabled = false
+                        end
+                    end
                 end
             end
         end)
     end
 end)
+
+-- تطبيق وضع الأداء إذا كان مفعلاً من الإعدادات المحفوظة
+if _G.PerformanceMode then
+    task.spawn(function()
+        task.wait(1)
+        ApplyExtremePerformanceMode(true)
+    end)
+end
 
 -- ================== إنشاء واجهة Rayfield ==================
 local function CreateUI()
@@ -753,11 +745,13 @@ local function CreateUI()
         end,
     })
 
-    -- زر FPS Boost (مرة واحدة)
-    MiscTab:CreateButton({
-        Name = "⚡ FPS Boost (جودة زبالة + إزالة الأشعة)",
-        Callback = function()
-            ApplyFPSBoost()
+    local performanceToggle = MiscTab:CreateToggle({
+        Name = "⚡ FPS Boost (جودة زبالة) - متطرف",
+        CurrentValue = _G.PerformanceMode,
+        Callback = function(state)
+            _G.PerformanceMode = state
+            ApplyExtremePerformanceMode(state)
+            SaveSettings()
         end,
     })
 
@@ -787,6 +781,7 @@ local function CreateUI()
             antiAfkToggle:Set(_G.AntiAfk)
             speedToggle:Set(_G.SpeedEnabled)
             speedSlider:Set(_G.SpeedValue)
+            performanceToggle:Set(_G.PerformanceMode)
             debugToggle:Set(_G.DebugMode)
         end,
     })
@@ -824,11 +819,10 @@ task.spawn(CreateUI)
 
 end) -- نهاية NoErrors
 
-print("✅ Diving For Brainrots - النسخة النهائية مع مسار آمن + FPS Boost القوي")
+print("✅ Diving For Brainrots - النسخة النهائية مع المسار الآمن و FPS Boost المتطرف")
 print("🔍 يستهدف: Mythic, Exotic, Limited, Secret (أي مسافة)")
 print("🛡️ مسار آمن: يتحرك إلى نقطة آمنة فوق الهدف ثم ينزل عمودياً")
-print("⚡ FPS Boost: زر واحد يخلي الجودة زبالة (إزالة الظلال، البارتيكالات، الأشعة، الأضواء)")
-print("🔄 حلقة صيانة: تحافظ على تعطيل المؤثرات كل 5 ثواني")
+print("⚡ FPS Boost: يخلي الجودة زبالة (تعطيل الظلال، البارتيكالات، الضباب، المؤثرات)")
 print("🧹 تنظيف الذاكرة: يتم جمع القمامة كل دقيقة")
 print("🐞 فعّل Debug Mode في تبويب Misc لرؤية التفاصيل")
 print("⏱️ توقيتات Auto Farm: دورة البحث 1.25ث، بعد الوصول 0.75ث، ضغط E 4ث")
