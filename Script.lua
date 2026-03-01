@@ -336,7 +336,7 @@ local function MoveToSafePosition(targetPos)
     
     -- حساب نقطة آمنة فوق الهدف (نضمن أن Y لا يقل عن -400)
     local safeY = math.max(targetPos.Y, -400) -- نضمن أن Y لا ينزل تحت -400
-    local safePos = Vector3.new(targetPos.X, safeY + 50, targetPos.Z) -- 50 وحدة فوق الهدف
+    local safePos = Vector3.new(targetPos.X, safeY + 125, targetPos.Z) -- 125 وحدة فوق الهدف
     
     DebugPrint("نتحرك إلى النقطة الآمنة:", safePos)
     if not MoveToPositionSmooth(safePos, true) then
