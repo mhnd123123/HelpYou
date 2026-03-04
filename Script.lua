@@ -3,6 +3,7 @@
 -- FPS Boost: زر واحد يطبق تحسينات قصوى لمرة واحدة
 -- OWNER: Skan_Dev
 -- تعديل: أولوية الأهداف: Secret > Limited > Exotic > Mythic + تحت الماء فقط
+-- تم التعديل لحل مشكلة FPS Drop عند تحريك الشاشة (إضافة Cache + تقليل التكرار)
 
 task.wait(5)
 
@@ -121,6 +122,13 @@ local PriorityMap = {
     Exotic = 3,
     Mythic = 4
 }
+
+-- ================== نظام التخزين المؤقت (Cache) لتجنب البحث المتكرر ==================
+local TargetCache = {
+    Time = 0,
+    List = {}
+}
+local CACHE_DURATION = 5  -- تحديث الكاش كل 5 ثوانٍ
 
 -- ================== دالة الطباعة للتصحيح ==================
 local function DebugPrint(...)
@@ -406,7 +414,7 @@ local function InteractWithObject(obj, maxAttempts)
     return false
 end
 
--- ================== البحث عن الأهداف تحت الماء فقط حسب النوع ==================
+-- ================== البحث عن الأهداف تحت الماء فقط حسب النوع (دون تغيير - يبحث في كل المكان) ==================
 local function FindTargetsByType(targetType)
     local char = LocalPlayer.Character
     if not char then return {} end
@@ -456,8 +464,13 @@ local function FindTargetsByType(targetType)
     return targets
 end
 
--- ================== البحث عن جميع الأهداف النشطة تحت الماء مع الترتيب حسب الأولوية ثم المسافة ==================
+-- ================== البحث عن جميع الأهداف النشطة تحت الماء مع الترتيب حسب الأولوية ثم المسافة (مع استخدام الكاش) ==================
 local function GetAllActiveTargets()
+    -- إذا كان الكاش لا يزال صالحاً، نعيد النتائج المخزنة مباشرة
+    if tick() - TargetCache.Time < CACHE_DURATION then
+        return TargetCache.List
+    end
+
     local targets = {}
     
     if _G.AutoPickupMythic then
@@ -497,17 +510,21 @@ local function GetAllActiveTargets()
         end
     end)
     
+    -- تحديث الكاش
+    TargetCache.Time = tick()
+    TargetCache.List = targets
+
     return targets
 end
 
--- ================== حلقة Auto Pickup الرئيسية (مع وقت 1.5 ثانية) ==================
+-- ================== حلقة Auto Pickup الرئيسية (مع وقت أطول 3.5 ثانية بدلاً من 1.5) ==================
 task.spawn(function()
     local failedAttempts = 0
     local lastTargetPosition = nil
     local retryCount = 0
 
     while _G.Running do
-        task.wait(1.5)
+        task.wait(3.5)  -- تم التعديل: من 1.5 إلى 3.5 لتخفيف الحمل
 
         pcall(function()
             local anyEnabled = _G.AutoPickupMythic or _G.AutoPickupExotic or _G.AutoPickupLimited or _G.AutoPickupSecret
@@ -522,7 +539,7 @@ task.spawn(function()
                 return
             end
 
-            local targets = GetAllActiveTargets()
+            local targets = GetAllActiveTargets()  -- الآن تستخدم الكاش
 
             if #targets == 0 then
                 DebugPrint("لا توجد أهداف تحت الماء مفعلة حالياً")
@@ -590,11 +607,11 @@ task.spawn(function()
     end
 end)
 
--- ================== Auto Buy ==================
+-- ================== Auto Buy (تم زيادة وقت الانتظار من 1 إلى 3 ثوانٍ) ==================
 for _, id in ipairs({301,302,303,304,305,306,307}) do
     task.spawn(function()
         while _G.Running do
-            task.wait(1.0)
+            task.wait(3.0)  -- تم التعديل: من 1.0 إلى 3.0
             pcall(function()
                 if _G["Buy"..id] then
                     ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("PurchaseStock"):InvokeServer(id, 1, "LuckyBlocksStock")
@@ -662,10 +679,10 @@ task.spawn(function()
     end
 end)
 
--- ================== Speed ==================
+-- ================== Speed (تم زيادة وقت الانتظار من 1 إلى 1.5 ثانية) ==================
 task.spawn(function()
     while _G.Running do
-        task.wait(1.0)
+        task.wait(1.5)  -- تم التعديل: من 1.0 إلى 1.5
         pcall(function()
             local c = LocalPlayer.Character
             if c then
@@ -739,6 +756,9 @@ local function ApplyExtremePerformanceMode()
         DebugPrint("تم تطبيق وضع تحسين الأداء المتطرف")
     end)
 end
+
+-- ================== تفعيل FPS Boost تلقائياً عند بدء التشغيل (إضافة جديدة) ==================
+ApplyExtremePerformanceMode()
 
 -- ================== إنشاء واجهة Rayfield ==================
 local function CreateUI()
@@ -966,3 +986,4 @@ print("✅ Diving For Brainrots Loaded Successfully!")
 print("👤 Owner: Skan_Dev")
 print("⏱️ Waiting 5 seconds completed")
 print("🌊 الهدف: فقط الأهداف تحت الماء (Y < 2)")
+print("⚡ تم تفعيل FPS Boost تلقائياً وتقليل التكرار لتجنب الـ Lag")
