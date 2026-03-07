@@ -4,6 +4,7 @@
 -- تعديل: أولوية الأهداف: Divine > Secret > Limited > Exotic > Mythic + تحت الماء فقط
 -- تحديث: جمع أول هدفين فقط ثم العودة للقاعدة
 -- تحديث: إذا مر على الهدف 90 ثانية دون جمعه، يتم تجاهله
+-- تحديث: التأكد من وجود ClickDetector أو ProximityPrompt قبل اعتبار الكائن هدفًا
 
 task.wait(5)
 
@@ -420,7 +421,7 @@ local function InteractWithObject(obj, maxAttempts)
     return false
 end
 
--- ================== البحث عن الأهداف تحت الماء فقط حسب النوع ==================
+-- ================== البحث عن الأهداف تحت الماء فقط حسب النوع (مع التحقق من وجود تفاعل) ==================
 local function FindTargetsByType(targetType)
     local char = LocalPlayer.Character
     if not char then return {} end
@@ -451,13 +452,27 @@ local function FindTargetsByType(targetType)
 
                 -- فقط الأهداف التي تكون تحت الماء (Y < WATER_LEVEL)
                 if pos and pos.Y < WATER_LEVEL then
-                    table.insert(targets, {
-                        Object = obj,
-                        Position = pos,
-                        Distance = (hrp.Position - pos).Magnitude,
-                        Type = keyword,
-                        Priority = PriorityMap[targetType] or 5
-                    })
+                    -- التحقق من وجود ClickDetector أو ProximityPrompt داخل الكائن
+                    local hasInteraction = false
+                    for _, descendant in ipairs(obj:GetDescendants()) do
+                        if descendant:IsA("ClickDetector") or descendant:IsA("ProximityPrompt") then
+                            hasInteraction = true
+                            break
+                        end
+                    end
+
+                    if hasInteraction then
+                        table.insert(targets, {
+                            Object = obj,
+                            Position = pos,
+                            Distance = (hrp.Position - pos).Magnitude,
+                            Type = keyword,
+                            Priority = PriorityMap[targetType] or 5
+                        })
+                        DebugPrint("هدف " .. keyword .. " صالح تحت الماء:", obj.Name, "عند Y:", pos.Y)
+                    else
+                        DebugPrint("تم تجاهل " .. keyword .. " لأنه لا يحتوي على ClickDetector/ProximityPrompt:", obj.Name)
+                    end
                 end
             end
         end
@@ -757,7 +772,7 @@ local function CreateUI()
     local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
     local Window = Rayfield:CreateWindow({
         Name = "Diving For Brainrots | Skan_Dev",
-        LoadingTitle = "Ultimate Script (Optimized + 90s Ignore)",
+        LoadingTitle = "Ultimate Script (Optimized + 90s Ignore + Interaction Check)",
         LoadingSubtitle = "Account: " .. LocalPlayer.Name,
     })
 
@@ -978,3 +993,4 @@ print("💎 أولوية: Divine > Secret > Limited > Exotic > Mythic")
 print("🎯 يتم جمع أول هدفين فقط ثم العودة للقاعدة")
 print("⏱️ إذا مر 90 ثانية على الهدف دون جمعه، يتم تجاهله")
 print("🔄 تحديث الكاش كل 6 ثوانٍ")
+print("🔍 تحسين: يتم الآن التأكد من وجود ClickDetector/ProximityPrompt في الهدف قبل الذهاب إليه")
