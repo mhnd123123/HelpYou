@@ -2,8 +2,8 @@
 -- الآلية: يروح مباشرة إلى الهدف (بدون مسار آمن) - فقط الأهداف تحت الماء
 -- OWNER: Skan_Dev
 -- تعديل: أولوية الأهداف: Divine > Secret > Limited > Exotic > Mythic + تحت الماء فقط
--- تحديث: جمع أول هدفين فقط ثم العودة للقاعدة + إزالة FPS Boost + تحسين Lag
--- تحديث: تحديث الكاش كل 6 ثوانٍ بدلاً من 10
+-- تحديث: جمع أول هدفين فقط ثم العودة للقاعدة
+-- تحديث: إذا مر على الهدف 90 ثانية دون جمعه، يتم تجاهله
 
 task.wait(5)
 
@@ -131,7 +131,10 @@ local TargetCache = {
     Time = 0,
     List = {}
 }
-local CACHE_DURATION = 6  -- تم التعديل: من 10 إلى 6 ثوانٍ
+local CACHE_DURATION = 6  -- تحديث كل 6 ثوانٍ
+
+-- جدول لتخزين وقت أول ظهور لكل كائن (باستخدام weak keys لتجنب تسريب الذاكرة)
+local targetFirstSeen = setmetatable({}, {__mode = "k"})
 
 -- ================== دالة الطباعة للتصحيح ==================
 local function DebugPrint(...)
@@ -455,7 +458,6 @@ local function FindTargetsByType(targetType)
                         Type = keyword,
                         Priority = PriorityMap[targetType] or 5
                     })
-                    DebugPrint("هدف " .. keyword .. " تحت الماء:", obj.Name, "عند Y:", pos.Y)
                 end
             end
         end
@@ -518,21 +520,39 @@ local function GetAllActiveTargets()
         end
     end)
     
+    -- تطبيق شرط الـ 90 ثانية: استبعاد الأهداف القديمة
+    local now = tick()
+    local filteredTargets = {}
+    for _, t in ipairs(targets) do
+        local obj = t.Object
+        if not targetFirstSeen[obj] then
+            -- أول مرة نرى هذا الهدف
+            targetFirstSeen[obj] = now
+        end
+        
+        local timeSinceFirstSeen = now - targetFirstSeen[obj]
+        if timeSinceFirstSeen <= 90 then
+            table.insert(filteredTargets, t)
+        else
+            DebugPrint("تجاهل هدف " .. t.Type .. " بسبب مرور 90 ثانية دون جمعه")
+        end
+    end
+    
     -- تحديث الكاش
     TargetCache.Time = tick()
-    TargetCache.List = targets
+    TargetCache.List = filteredTargets
 
-    return targets
+    return filteredTargets
 end
 
--- ================== حلقة Auto Pickup الرئيسية (وقت أطول لتخفيف الحمل) ==================
+-- ================== حلقة Auto Pickup الرئيسية ==================
 task.spawn(function()
     local failedAttempts = 0
     local lastTargetPosition = nil
     local retryCount = 0
 
     while _G.Running do
-        task.wait(3.5)  -- نفس القيمة (3.5 ثانية)
+        task.wait(3.5)
 
         pcall(function()
             local anyEnabled = _G.AutoPickupDivine or _G.AutoPickupSecret or _G.AutoPickupLimited or _G.AutoPickupExotic or _G.AutoPickupMythic
@@ -550,7 +570,7 @@ task.spawn(function()
             local allTargets = GetAllActiveTargets()
 
             if #allTargets == 0 then
-                DebugPrint("لا توجد أهداف تحت الماء مفعلة حالياً")
+                DebugPrint("لا توجد أهداف تحت الماء مفعلة حالياً (أو كلها تجاوزت 90 ثانية)")
                 failedAttempts = failedAttempts + 1
                 if failedAttempts > 5 then
                     task.wait(3)
@@ -607,10 +627,10 @@ task.spawn(function()
     end
 end)
 
--- ================== Anti Afk (تم زيادة الوقت) ==================
+-- ================== Anti Afk ==================
 task.spawn(function()
     while _G.Running do
-        task.wait(180)  -- من 120 إلى 180 ثانية
+        task.wait(180)
         pcall(function()
             if _G.AntiAfk and LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("Humanoid") then
                 LocalPlayer.Character.Humanoid:Move(Vector3.new(0,0,0), false)
@@ -621,11 +641,11 @@ task.spawn(function()
     end
 end)
 
--- ================== Auto Buy (تم زيادة الوقت) ==================
+-- ================== Auto Buy ==================
 for _, id in ipairs({301,302,303,304,305,306,307}) do
     task.spawn(function()
         while _G.Running do
-            task.wait(5.0)  -- من 3.0 إلى 5.0
+            task.wait(5.0)
             pcall(function()
                 if _G["Buy"..id] then
                     ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("PurchaseStock"):InvokeServer(id, 1, "LuckyBlocksStock")
@@ -639,7 +659,7 @@ end
 local stands = {"stand1","stand2","stand3","stand4","stand5","stand6","stand7","stand8","stand9","stand10"}
 task.spawn(function()
     while _G.Running do
-        task.wait(3000)  -- 5 دقائق (كما هي)
+        task.wait(3000)
         pcall(function()
             if _G.AutoCollect then
                 for _, stand in ipairs(stands) do
@@ -654,7 +674,7 @@ end)
 -- ================== Auto Free Exclusive Chest ==================
 task.spawn(function()
     while _G.Running do
-        task.wait(120)  -- دقيقتين (كما هي)
+        task.wait(120)
         pcall(function()
             if _G.AutoFreeChest then
                 ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("ClaimCustomReward"):FireServer(1)
@@ -666,7 +686,7 @@ end)
 -- ================== Auto Collect Reward ==================
 task.spawn(function()
     while _G.Running do
-        task.wait(120)  -- دقيقتين (كما هي)
+        task.wait(120)
         pcall(function()
             if _G.AutoCollectReward then
                 for i = 1, 12 do
@@ -679,10 +699,10 @@ task.spawn(function()
     end
 end)
 
--- ================== Noclip (تم زيادة الوقت) ==================
+-- ================== Noclip ==================
 task.spawn(function()
     while _G.Running do
-        task.wait(1.0)  -- من 0.5 إلى 1.0 ثانية
+        task.wait(1.0)
         pcall(function()
             if _G.Noclip and LocalPlayer.Character then
                 for _, p in ipairs(LocalPlayer.Character:GetDescendants()) do
@@ -693,10 +713,10 @@ task.spawn(function()
     end
 end)
 
--- ================== Speed (تم زيادة الوقت) ==================
+-- ================== Speed ==================
 task.spawn(function()
     while _G.Running do
-        task.wait(2.0)  -- من 1.5 إلى 2.0 ثانية
+        task.wait(2.0)
         pcall(function()
             local c = LocalPlayer.Character
             if c then
@@ -713,10 +733,10 @@ task.spawn(function()
     end
 end)
 
--- ================== Garbage Collection (تم زيادة الوقت) ==================
+-- ================== Garbage Collection ==================
 task.spawn(function()
     while _G.Running do
-        task.wait(120)  -- من 60 إلى 120 ثانية
+        task.wait(120)
         pcall(function()
             Debris:AddItem(Instance.new("Part"), 0)
             collectgarbage()
@@ -737,7 +757,7 @@ local function CreateUI()
     local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
     local Window = Rayfield:CreateWindow({
         Name = "Diving For Brainrots | Skan_Dev",
-        LoadingTitle = "Ultimate Script (Optimized)",
+        LoadingTitle = "Ultimate Script (Optimized + 90s Ignore)",
         LoadingSubtitle = "Account: " .. LocalPlayer.Name,
     })
 
@@ -953,9 +973,8 @@ end) -- نهاية NoErrors
 
 print("✅ Diving For Brainrots Loaded Successfully!")
 print("👤 Owner: Skan_Dev")
-print("⏱️ Waiting 5 seconds completed")
 print("🌊 الهدف: فقط الأهداف تحت الماء (Y < 2)")
-print("💎 تمت إضافة نوع Divine كأعلى أولوية")
+print("💎 أولوية: Divine > Secret > Limited > Exotic > Mythic")
 print("🎯 يتم جمع أول هدفين فقط ثم العودة للقاعدة")
-print("⚡ تم تحسين الأداء وتقليل الـ Lag (إزالة FPS Boost)")
-print("🔄 تحديث الكاش كل 6 ثوانٍ بدلاً من 10")
+print("⏱️ إذا مر 90 ثانية على الهدف دون جمعه، يتم تجاهله")
+print("🔄 تحديث الكاش كل 6 ثوانٍ")
