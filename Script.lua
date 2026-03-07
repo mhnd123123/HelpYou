@@ -1,9 +1,9 @@
 -- Diving For Brainrots - Rayfield UI (النسخة المعدلة حسب الطلب)
 -- الآلية: يروح مباشرة إلى الهدف (بدون مسار آمن) - فقط الأهداف تحت الماء
--- FPS Boost: زر واحد يطبق تحسينات قصوى لمرة واحدة
 -- OWNER: Skan_Dev
--- تعديل: أولوية الأهداف: Secret > Limited > Exotic > Mythic + تحت الماء فقط
--- تم التعديل لحل مشكلة FPS Drop عند تحريك الشاشة (إضافة Cache + تقليل التكرار)
+-- تعديل: أولوية الأهداف: Divine > Secret > Limited > Exotic > Mythic + تحت الماء فقط
+-- تحديث: جمع أول هدفين فقط ثم العودة للقاعدة + إزالة FPS Boost + تحسين Lag
+-- تحديث: تحديث الكاش كل 6 ثوانٍ بدلاً من 10
 
 task.wait(5)
 
@@ -25,7 +25,6 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Workspace = game:GetService("Workspace")
 local RunService = game:GetService("RunService")
 local Debris = game:GetService("Debris")
-local Lighting = game:GetService("Lighting")
 local TweenService = game:GetService("TweenService")
 local LocalPlayer = Players.LocalPlayer
 
@@ -46,6 +45,7 @@ local function SaveSettings()
         AutoPickupExotic = _G.AutoPickupExotic or false,
         AutoPickupLimited = _G.AutoPickupLimited or false,
         AutoPickupSecret = _G.AutoPickupSecret or false,
+        AutoPickupDivine = _G.AutoPickupDivine or false,
         DebugMode = _G.DebugMode or false,
         AutoCollectReward = _G.AutoCollectReward or false,
         AutoBuy = {}
@@ -76,6 +76,7 @@ local function LoadSettings()
             _G.AutoPickupExotic = data.AutoPickupExotic or false
             _G.AutoPickupLimited = data.AutoPickupLimited or false
             _G.AutoPickupSecret = data.AutoPickupSecret or false
+            _G.AutoPickupDivine = data.AutoPickupDivine or false
             _G.DebugMode = data.DebugMode or false
             _G.AutoCollectReward = data.AutoCollectReward or false
             if data.AutoBuy then
@@ -96,6 +97,7 @@ _G.AutoPickupMythic = _G.AutoPickupMythic or false
 _G.AutoPickupExotic = _G.AutoPickupExotic or false
 _G.AutoPickupLimited = _G.AutoPickupLimited or false
 _G.AutoPickupSecret = _G.AutoPickupSecret or false
+_G.AutoPickupDivine = _G.AutoPickupDivine or false
 _G.DebugMode = _G.DebugMode or false
 _G.AutoCollectReward = _G.AutoCollectReward or false
 _G.FarmBusy = false
@@ -117,6 +119,7 @@ local WATER_LEVEL = 2
 
 -- ================== أولويات الأنواع (الأصغر = الأعلى أولوية) ==================
 local PriorityMap = {
+    Divine = 0,      -- أعلى أولوية
     Secret = 1,
     Limited = 2,
     Exotic = 3,
@@ -128,7 +131,7 @@ local TargetCache = {
     Time = 0,
     List = {}
 }
-local CACHE_DURATION = 5  -- تحديث الكاش كل 5 ثوانٍ
+local CACHE_DURATION = 6  -- تم التعديل: من 10 إلى 6 ثوانٍ
 
 -- ================== دالة الطباعة للتصحيح ==================
 local function DebugPrint(...)
@@ -414,7 +417,7 @@ local function InteractWithObject(obj, maxAttempts)
     return false
 end
 
--- ================== البحث عن الأهداف تحت الماء فقط حسب النوع (دون تغيير - يبحث في كل المكان) ==================
+-- ================== البحث عن الأهداف تحت الماء فقط حسب النوع ==================
 local function FindTargetsByType(targetType)
     local char = LocalPlayer.Character
     if not char then return {} end
@@ -453,8 +456,6 @@ local function FindTargetsByType(targetType)
                         Priority = PriorityMap[targetType] or 5
                     })
                     DebugPrint("هدف " .. keyword .. " تحت الماء:", obj.Name, "عند Y:", pos.Y)
-                else
-                    DebugPrint("هدف " .. keyword .. " فوق الماء (تم تجاهله):", obj.Name, "عند Y:", pos and pos.Y or "?" )
                 end
             end
         end
@@ -464,7 +465,7 @@ local function FindTargetsByType(targetType)
     return targets
 end
 
--- ================== البحث عن جميع الأهداف النشطة تحت الماء مع الترتيب حسب الأولوية ثم المسافة (مع استخدام الكاش) ==================
+-- ================== البحث عن جميع الأهداف النشطة تحت الماء مع الترتيب حسب الأولوية ثم المسافة ==================
 local function GetAllActiveTargets()
     -- إذا كان الكاش لا يزال صالحاً، نعيد النتائج المخزنة مباشرة
     if tick() - TargetCache.Time < CACHE_DURATION then
@@ -473,16 +474,16 @@ local function GetAllActiveTargets()
 
     local targets = {}
     
-    if _G.AutoPickupMythic then
-        local mythicTargets = FindTargetsByType("Mythic")
-        for _, t in ipairs(mythicTargets) do
+    if _G.AutoPickupDivine then
+        local divineTargets = FindTargetsByType("Divine")
+        for _, t in ipairs(divineTargets) do
             table.insert(targets, t)
         end
     end
     
-    if _G.AutoPickupExotic then
-        local exoticTargets = FindTargetsByType("Exotic")
-        for _, t in ipairs(exoticTargets) do
+    if _G.AutoPickupSecret then
+        local secretTargets = FindTargetsByType("Secret")
+        for _, t in ipairs(secretTargets) do
             table.insert(targets, t)
         end
     end
@@ -494,9 +495,16 @@ local function GetAllActiveTargets()
         end
     end
     
-    if _G.AutoPickupSecret then
-        local secretTargets = FindTargetsByType("Secret")
-        for _, t in ipairs(secretTargets) do
+    if _G.AutoPickupExotic then
+        local exoticTargets = FindTargetsByType("Exotic")
+        for _, t in ipairs(exoticTargets) do
+            table.insert(targets, t)
+        end
+    end
+    
+    if _G.AutoPickupMythic then
+        local mythicTargets = FindTargetsByType("Mythic")
+        for _, t in ipairs(mythicTargets) do
             table.insert(targets, t)
         end
     end
@@ -517,17 +525,17 @@ local function GetAllActiveTargets()
     return targets
 end
 
--- ================== حلقة Auto Pickup الرئيسية (مع وقت أطول 3.5 ثانية بدلاً من 1.5) ==================
+-- ================== حلقة Auto Pickup الرئيسية (وقت أطول لتخفيف الحمل) ==================
 task.spawn(function()
     local failedAttempts = 0
     local lastTargetPosition = nil
     local retryCount = 0
 
     while _G.Running do
-        task.wait(3.5)  -- تم التعديل: من 1.5 إلى 3.5 لتخفيف الحمل
+        task.wait(3.5)  -- نفس القيمة (3.5 ثانية)
 
         pcall(function()
-            local anyEnabled = _G.AutoPickupMythic or _G.AutoPickupExotic or _G.AutoPickupLimited or _G.AutoPickupSecret
+            local anyEnabled = _G.AutoPickupDivine or _G.AutoPickupSecret or _G.AutoPickupLimited or _G.AutoPickupExotic or _G.AutoPickupMythic
             
             if not anyEnabled or _G.FarmBusy or _G.ReturningToBase then
                 return
@@ -539,9 +547,9 @@ task.spawn(function()
                 return
             end
 
-            local targets = GetAllActiveTargets()  -- الآن تستخدم الكاش
+            local allTargets = GetAllActiveTargets()
 
-            if #targets == 0 then
+            if #allTargets == 0 then
                 DebugPrint("لا توجد أهداف تحت الماء مفعلة حالياً")
                 failedAttempts = failedAttempts + 1
                 if failedAttempts > 5 then
@@ -551,52 +559,58 @@ task.spawn(function()
                 return
             end
 
-            local target = targets[1]  -- الهدف ذو الأولوية الأعلى (الأكثر ندرة تحت الماء)
-            
-            if lastTargetPosition and (lastTargetPosition - target.Position).Magnitude < 1 then
-                retryCount = retryCount + 1
-                if retryCount > 3 then
-                    DebugPrint("فشل متكرر في نفس الهدف، نتخطاه")
-                    lastTargetPosition = nil
-                    retryCount = 0
-                    return
-                end
-            else
-                lastTargetPosition = target.Position
-                retryCount = 0
+            -- نأخذ أول هدفين فقط
+            local targetsToCollect = {}
+            for i = 1, math.min(2, #allTargets) do
+                table.insert(targetsToCollect, allTargets[i])
             end
-            
+
             failedAttempts = 0
             _G.FarmBusy = true
-            DebugPrint("نتعامل مع الهدف:", target.Object.Name, "النوع:", target.Type)
+            DebugPrint("عدد الأهداف المقرر جمعها:", #targetsToCollect)
 
-            local targetPos = target.Position
-            local approachPos = Vector3.new(targetPos.X, targetPos.Y + 2, targetPos.Z)
-            
-            DebugPrint("التحرك إلى الهدف تحت الماء:", approachPos)
+            for index, target in ipairs(targetsToCollect) do
+                DebugPrint("نتعامل مع الهدف رقم", index, ":", target.Object.Name, "النوع:", target.Type)
 
-            local moveSuccess = MoveToPositionSmooth(approachPos, true)
-            
-            if moveSuccess then
-                task.wait(0.5)
-                InteractWithObject(target.Object, 3)
-                task.wait(0.5)
-            else
-                DebugPrint("فشل التحرك إلى الهدف، نحاول مرة أخرى")
-                task.wait(1)
+                if lastTargetPosition and (lastTargetPosition - target.Position).Magnitude < 1 then
+                    retryCount = retryCount + 1
+                    if retryCount > 3 then
+                        DebugPrint("فشل متكرر في نفس الهدف، نتخطاه")
+                        lastTargetPosition = nil
+                        retryCount = 0
+                        break
+                    end
+                else
+                    lastTargetPosition = target.Position
+                    retryCount = 0
+                end
+
+                local targetPos = target.Position
+                local approachPos = Vector3.new(targetPos.X, targetPos.Y + 2, targetPos.Z)
+
+                local moveSuccess = MoveToPositionSmooth(approachPos, true)
+
+                if moveSuccess then
+                    task.wait(0.5)
+                    InteractWithObject(target.Object, 3)
+                    task.wait(0.5)
+                else
+                    DebugPrint("فشل التحرك إلى الهدف، ننتقل للهدف التالي")
+                end
             end
 
+            -- بعد الانتهاء من أول هدفين، نعود إلى القاعدة
             ReturnToBase()
-            
+
             _G.FarmBusy = false
         end)
     end
 end)
 
--- ================== Anti Afk ==================
+-- ================== Anti Afk (تم زيادة الوقت) ==================
 task.spawn(function()
     while _G.Running do
-        task.wait(120)
+        task.wait(180)  -- من 120 إلى 180 ثانية
         pcall(function()
             if _G.AntiAfk and LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("Humanoid") then
                 LocalPlayer.Character.Humanoid:Move(Vector3.new(0,0,0), false)
@@ -607,11 +621,11 @@ task.spawn(function()
     end
 end)
 
--- ================== Auto Buy (تم زيادة وقت الانتظار من 1 إلى 3 ثوانٍ) ==================
+-- ================== Auto Buy (تم زيادة الوقت) ==================
 for _, id in ipairs({301,302,303,304,305,306,307}) do
     task.spawn(function()
         while _G.Running do
-            task.wait(3.0)  -- تم التعديل: من 1.0 إلى 3.0
+            task.wait(5.0)  -- من 3.0 إلى 5.0
             pcall(function()
                 if _G["Buy"..id] then
                     ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("PurchaseStock"):InvokeServer(id, 1, "LuckyBlocksStock")
@@ -625,7 +639,7 @@ end
 local stands = {"stand1","stand2","stand3","stand4","stand5","stand6","stand7","stand8","stand9","stand10"}
 task.spawn(function()
     while _G.Running do
-        task.wait(3000)
+        task.wait(3000)  -- 5 دقائق (كما هي)
         pcall(function()
             if _G.AutoCollect then
                 for _, stand in ipairs(stands) do
@@ -640,7 +654,7 @@ end)
 -- ================== Auto Free Exclusive Chest ==================
 task.spawn(function()
     while _G.Running do
-        task.wait(120)
+        task.wait(120)  -- دقيقتين (كما هي)
         pcall(function()
             if _G.AutoFreeChest then
                 ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("ClaimCustomReward"):FireServer(1)
@@ -652,7 +666,7 @@ end)
 -- ================== Auto Collect Reward ==================
 task.spawn(function()
     while _G.Running do
-        task.wait(120)
+        task.wait(120)  -- دقيقتين (كما هي)
         pcall(function()
             if _G.AutoCollectReward then
                 for i = 1, 12 do
@@ -665,10 +679,10 @@ task.spawn(function()
     end
 end)
 
--- ================== Noclip ==================
+-- ================== Noclip (تم زيادة الوقت) ==================
 task.spawn(function()
     while _G.Running do
-        task.wait(0.5)
+        task.wait(1.0)  -- من 0.5 إلى 1.0 ثانية
         pcall(function()
             if _G.Noclip and LocalPlayer.Character then
                 for _, p in ipairs(LocalPlayer.Character:GetDescendants()) do
@@ -679,10 +693,10 @@ task.spawn(function()
     end
 end)
 
--- ================== Speed (تم زيادة وقت الانتظار من 1 إلى 1.5 ثانية) ==================
+-- ================== Speed (تم زيادة الوقت) ==================
 task.spawn(function()
     while _G.Running do
-        task.wait(1.5)  -- تم التعديل: من 1.0 إلى 1.5
+        task.wait(2.0)  -- من 1.5 إلى 2.0 ثانية
         pcall(function()
             local c = LocalPlayer.Character
             if c then
@@ -699,10 +713,10 @@ task.spawn(function()
     end
 end)
 
--- ================== Garbage Collection ==================
+-- ================== Garbage Collection (تم زيادة الوقت) ==================
 task.spawn(function()
     while _G.Running do
-        task.wait(60)
+        task.wait(120)  -- من 60 إلى 120 ثانية
         pcall(function()
             Debris:AddItem(Instance.new("Part"), 0)
             collectgarbage()
@@ -711,54 +725,6 @@ task.spawn(function()
         end)
     end
 end)
-
--- ================== FPS Boost ==================
-local function ApplyExtremePerformanceMode()
-    pcall(function()
-        local userSettings = game:GetService("UserSettings")
-        local gameSettings = userSettings:GetService("GameSettings")
-        gameSettings.GraphicsQuality = 0
-        
-        Lighting.GlobalShadows = false
-        for _, obj in ipairs(Workspace:GetDescendants()) do
-            if obj:IsA("BasePart") then
-                obj.CastShadow = false
-            end
-        end
-
-        for _, obj in ipairs(Workspace:GetDescendants()) do
-            if obj:IsA("ParticleEmitter") or obj:IsA("Trail") or obj:IsA("Smoke") or obj:IsA("Fire") or obj:IsA("Sparkles") or obj:IsA("Beam") then
-                obj.Enabled = false
-            end
-        end
-
-        Lighting.FogStart = 9e9
-        Lighting.FogEnd = 9e9
-        Lighting.Brightness = 1
-        Lighting.OutdoorAmbient = Color3.new(0.3, 0.3, 0.3)
-
-        Lighting.ColorCorrection = nil
-        Lighting.Bloom = nil
-        Lighting.SunRays = nil
-        Lighting.Atmosphere = nil
-
-        for _, obj in ipairs(Workspace:GetDescendants()) do
-            if obj:IsA("Sound") then
-                obj.Volume = 0
-            end
-        end
-
-        if Workspace.Terrain then
-            Workspace.Terrain.WaterWaveSize = 0
-            Workspace.Terrain.WaterWaveSpeed = 0
-        end
-
-        DebugPrint("تم تطبيق وضع تحسين الأداء المتطرف")
-    end)
-end
-
--- ================== تفعيل FPS Boost تلقائياً عند بدء التشغيل (إضافة جديدة) ==================
-ApplyExtremePerformanceMode()
 
 -- ================== إنشاء واجهة Rayfield ==================
 local function CreateUI()
@@ -771,7 +737,7 @@ local function CreateUI()
     local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
     local Window = Rayfield:CreateWindow({
         Name = "Diving For Brainrots | Skan_Dev",
-        LoadingTitle = "Ultimate Script (FPS Boost Extreme)",
+        LoadingTitle = "Ultimate Script (Optimized)",
         LoadingSubtitle = "Account: " .. LocalPlayer.Name,
     })
 
@@ -824,20 +790,20 @@ local function CreateUI()
 
     CollectTab:CreateLabel("─── Auto Pickup (تحت الماء فقط) ───")
 
-    local mythicToggle = CollectTab:CreateToggle({
-        Name = "🔴 Mythic",
-        CurrentValue = _G.AutoPickupMythic,
+    local divineToggle = CollectTab:CreateToggle({
+        Name = "💎 Divine (أعلى أولوية)",
+        CurrentValue = _G.AutoPickupDivine,
         Callback = function(s)
-            _G.AutoPickupMythic = s
+            _G.AutoPickupDivine = s
             SaveSettings()
         end,
     })
 
-    local exoticToggle = CollectTab:CreateToggle({
-        Name = "🟣 Exotic",
-        CurrentValue = _G.AutoPickupExotic,
+    local secretToggle = CollectTab:CreateToggle({
+        Name = "⚪ Secret",
+        CurrentValue = _G.AutoPickupSecret,
         Callback = function(s)
-            _G.AutoPickupExotic = s
+            _G.AutoPickupSecret = s
             SaveSettings()
         end,
     })
@@ -851,11 +817,20 @@ local function CreateUI()
         end,
     })
 
-    local secretToggle = CollectTab:CreateToggle({
-        Name = "⚪ Secret",
-        CurrentValue = _G.AutoPickupSecret,
+    local exoticToggle = CollectTab:CreateToggle({
+        Name = "🟣 Exotic",
+        CurrentValue = _G.AutoPickupExotic,
         Callback = function(s)
-            _G.AutoPickupSecret = s
+            _G.AutoPickupExotic = s
+            SaveSettings()
+        end,
+    })
+
+    local mythicToggle = CollectTab:CreateToggle({
+        Name = "🔴 Mythic",
+        CurrentValue = _G.AutoPickupMythic,
+        Callback = function(s)
+            _G.AutoPickupMythic = s
             SaveSettings()
         end,
     })
@@ -909,13 +884,6 @@ local function CreateUI()
         end,
     })
 
-    MiscTab:CreateButton({
-        Name = "⚡ Apply FPS Boost",
-        Callback = function()
-            ApplyExtremePerformanceMode()
-        end,
-    })
-
     local debugToggle = MiscTab:CreateToggle({
         Name = "🐞 Debug Mode",
         CurrentValue = _G.DebugMode,
@@ -942,10 +910,11 @@ local function CreateUI()
             speedToggle:Set(_G.SpeedEnabled)
             speedSlider:Set(_G.SpeedValue)
             debugToggle:Set(_G.DebugMode)
-            mythicToggle:Set(_G.AutoPickupMythic)
-            exoticToggle:Set(_G.AutoPickupExotic)
-            limitedToggle:Set(_G.AutoPickupLimited)
+            divineToggle:Set(_G.AutoPickupDivine)
             secretToggle:Set(_G.AutoPickupSecret)
+            limitedToggle:Set(_G.AutoPickupLimited)
+            exoticToggle:Set(_G.AutoPickupExotic)
+            mythicToggle:Set(_G.AutoPickupMythic)
         end,
     })
 
@@ -986,4 +955,7 @@ print("✅ Diving For Brainrots Loaded Successfully!")
 print("👤 Owner: Skan_Dev")
 print("⏱️ Waiting 5 seconds completed")
 print("🌊 الهدف: فقط الأهداف تحت الماء (Y < 2)")
-print("⚡ تم تفعيل FPS Boost تلقائياً وتقليل التكرار لتجنب الـ Lag")
+print("💎 تمت إضافة نوع Divine كأعلى أولوية")
+print("🎯 يتم جمع أول هدفين فقط ثم العودة للقاعدة")
+print("⚡ تم تحسين الأداء وتقليل الـ Lag (إزالة FPS Boost)")
+print("🔄 تحديث الكاش كل 6 ثوانٍ بدلاً من 10")
