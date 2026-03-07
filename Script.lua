@@ -4,6 +4,8 @@
 -- تعديل: أولوية الأهداف: Divine > Secret > Limited > Exotic > Mythic + تحت الماء فقط
 -- تحديث: جمع أول هدفين فقط ثم العودة للقاعدة
 -- تحديث: إذا مر على الهدف 90 ثانية دون جمعه، يتم تجاهله
+-- تحديث: التأكد من وجود ClickDetector أو ProximityPrompt قبل اعتبار الكائن هدفًا
+-- تحديث: التوجه إلى موقع الهدف بالضبط (بدون إضافة 2 على Y)
 
 task.wait(5)
 
@@ -212,7 +214,7 @@ local function MoveToPositionTween(targetPosition, duration)
         task.wait()
     end
     
-    success = (hrp.Position - targetPosition).Magnitude < 5
+    success = (hrp.Position - targetPosition).Magnitude < 3  -- تقليل المسموح به للوصول
     CurrentTween = nil
     return success
 end
@@ -274,8 +276,8 @@ local function MoveToPositionSmooth(targetPosition, stabilize)
         local currentPos = hrp.Position
         local currentDistance = (targetPosition - currentPos).Magnitude
 
-        -- التحقق من الوصول
-        if currentDistance < 3.0 then
+        -- التحقق من الوصول (نزيد الدقة)
+        if currentDistance < 2.0 then
             DebugPrint("وصلنا إلى الهدف، المسافة:", currentDistance)
             completed = true
             break
@@ -321,10 +323,8 @@ local function MoveToPositionSmooth(targetPosition, stabilize)
         -- حساب اتجاه الحركة
         local direction = (targetPosition - currentPos).Unit
         
-        -- تعديل الارتفاع تدريجياً
-        if currentPos.Y < WATER_LEVEL and targetPosition.Y > WATER_LEVEL then
-            direction = Vector3.new(direction.X, 0.5, direction.Z).Unit
-        elseif currentPos.Y > WATER_LEVEL and targetPosition.Y < WATER_LEVEL then
+        -- تعديل الارتفاع تدريجياً (إذا كان الهدف تحت الماء ونحن فوق، ننزل)
+        if currentPos.Y > WATER_LEVEL and targetPosition.Y < WATER_LEVEL then
             direction = Vector3.new(direction.X, -0.3, direction.Z).Unit
         end
         
@@ -348,7 +348,7 @@ local function MoveToPositionSmooth(targetPosition, stabilize)
     hrp.Velocity = Vector3.new(0,0,0)
     _G.Noclip = originalNoclip
 
-    -- تصحيح الموقع النهائي
+    -- تصحيح الموقع النهائي (نضبط CFrame بدقة)
     local finalPos = targetPosition
     if finalPos.Y < -500 then
         finalPos = Vector3.new(finalPos.X, -490, finalPos.Z)
@@ -420,7 +420,7 @@ local function InteractWithObject(obj, maxAttempts)
     return false
 end
 
--- ================== البحث عن الأهداف تحت الماء فقط حسب النوع ==================
+-- ================== البحث عن الأهداف تحت الماء فقط حسب النوع (مع التحقق من وجود تفاعل) ==================
 local function FindTargetsByType(targetType)
     local char = LocalPlayer.Character
     if not char then return {} end
@@ -451,13 +451,27 @@ local function FindTargetsByType(targetType)
 
                 -- فقط الأهداف التي تكون تحت الماء (Y < WATER_LEVEL)
                 if pos and pos.Y < WATER_LEVEL then
-                    table.insert(targets, {
-                        Object = obj,
-                        Position = pos,
-                        Distance = (hrp.Position - pos).Magnitude,
-                        Type = keyword,
-                        Priority = PriorityMap[targetType] or 5
-                    })
+                    -- التحقق من وجود ClickDetector أو ProximityPrompt داخل الكائن
+                    local hasInteraction = false
+                    for _, descendant in ipairs(obj:GetDescendants()) do
+                        if descendant:IsA("ClickDetector") or descendant:IsA("ProximityPrompt") then
+                            hasInteraction = true
+                            break
+                        end
+                    end
+
+                    if hasInteraction then
+                        table.insert(targets, {
+                            Object = obj,
+                            Position = pos,
+                            Distance = (hrp.Position - pos).Magnitude,
+                            Type = keyword,
+                            Priority = PriorityMap[targetType] or 5
+                        })
+                        DebugPrint("هدف " .. keyword .. " صالح تحت الماء:", obj.Name, "عند Y:", pos.Y)
+                    else
+                        DebugPrint("تم تجاهل " .. keyword .. " لأنه لا يحتوي على ClickDetector/ProximityPrompt:", obj.Name)
+                    end
                 end
             end
         end
@@ -605,10 +619,9 @@ task.spawn(function()
                     retryCount = 0
                 end
 
+                -- التوجه إلى موقع الهدف بالضبط (بدون إضافة 2)
                 local targetPos = target.Position
-                local approachPos = Vector3.new(targetPos.X, targetPos.Y + 2, targetPos.Z)
-
-                local moveSuccess = MoveToPositionSmooth(approachPos, true)
+                local moveSuccess = MoveToPositionSmooth(targetPos, true)
 
                 if moveSuccess then
                     task.wait(0.5)
@@ -757,7 +770,7 @@ local function CreateUI()
     local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
     local Window = Rayfield:CreateWindow({
         Name = "Diving For Brainrots | Skan_Dev",
-        LoadingTitle = "Ultimate Script (Optimized + 90s Ignore)",
+        LoadingTitle = "Ultimate Script (Optimized + 90s Ignore + Interaction Check + Exact Position)",
         LoadingSubtitle = "Account: " .. LocalPlayer.Name,
     })
 
@@ -978,3 +991,5 @@ print("💎 أولوية: Divine > Secret > Limited > Exotic > Mythic")
 print("🎯 يتم جمع أول هدفين فقط ثم العودة للقاعدة")
 print("⏱️ إذا مر 90 ثانية على الهدف دون جمعه، يتم تجاهله")
 print("🔄 تحديث الكاش كل 6 ثوانٍ")
+print("🔍 تحسين: يتم الآن التأكد من وجود ClickDetector/ProximityPrompt في الهدف قبل الذهاب إليه")
+print("📍 تحسين: التوجه إلى موقع الهدف بالضبط (بدون إضافة أي مسافة)")
