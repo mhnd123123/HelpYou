@@ -3,9 +3,12 @@
 -- OWNER: Skan_Dev
 -- تعديل: أولوية الأهداف: Divine > Secret > Limited > Exotic > Mythic + تحت الماء فقط
 -- تحديث: جمع أول هدفين فقط ثم العودة للقاعدة
--- تحديث: إذا مر على الهدف 90 ثانية دون جمعه، يتم تجاهله
--- تحديث: التأكد من وجود ClickDetector أو ProximityPrompt قبل اعتبار الكائن هدفًا
--- تحديث: التوجه إلى موقع الهدف بالضبط (بدون إضافة 2 على Y)
+-- تحديث: سرعة التحرك الأساسية 100، مع تباطؤ تدريجي عند الاقتراب من الهدف (تصل إلى 10)
+-- تحديث: Noclip دائم (شغال طول الوقت)
+-- تحديث: تثبيت طبيعي عند الهدف مع كشف الطيران وإزالة تلقائية
+-- تحديث: عند التوجه للهدف، يذهب إلى Y+7 (فوق الهدف بمسافة) ويتم تثبيته هناك
+-- تحديث: تجاهل الهدف بعد 60 ثانية من ظهوره مع البحث كل 4 ثوانٍ
+-- تحديث: تحسين الكاميرا عند العودة للقاعدة (TP Base)
 
 task.wait(5)
 
@@ -39,7 +42,6 @@ local function SaveSettings()
     local settings = {
         AutoCollect = _G.AutoCollect or false,
         AntiAfk = _G.AntiAfk or false,
-        Noclip = _G.Noclip or false,
         AutoFreeChest = _G.AutoFreeChest or false,
         SpeedEnabled = _G.SpeedEnabled or false,
         SpeedValue = _G.SpeedValue or 16,
@@ -70,7 +72,6 @@ local function LoadSettings()
             local data = HttpService:JSONDecode(readfile(path))
             _G.AutoCollect = data.AutoCollect or false
             _G.AntiAfk = data.AntiAfk or false
-            _G.Noclip = data.Noclip or false
             _G.AutoFreeChest = data.AutoFreeChest or false
             _G.SpeedEnabled = data.SpeedEnabled or false
             _G.SpeedValue = data.SpeedValue or 16
@@ -91,7 +92,6 @@ end
 -- ================== المتغيرات العامة ==================
 _G.AutoCollect = _G.AutoCollect or false
 _G.AntiAfk = _G.AntiAfk or false
-_G.Noclip = _G.Noclip or false
 _G.AutoFreeChest = _G.AutoFreeChest or false
 _G.SpeedEnabled = _G.SpeedEnabled or false
 _G.SpeedValue = _G.SpeedValue or 16
@@ -106,15 +106,18 @@ _G.FarmBusy = false
 _G.ReturningToBase = false
 for i=301,307 do _G["Buy"..i] = _G["Buy"..i] or false end
 
--- سرعة التنقل ثابتة 60
-local NAVIGATION_SPEED = 60
+-- سرعة التنقل الأساسية 100، وسرعة التباطؤ 10
+local NAVIGATION_SPEED = 100
+local SLOW_SPEED = 10
+local SLOW_DISTANCE = 30  -- نبدأ التباطؤ عندما نكون على بعد 30 وحدة من الهدف
 
 LoadSettings()
 _G.Running = true
 
-local CurrentStabilizer = nil
-local CurrentBodyVelocity = nil
+-- التيار المتر المتابع للحركة
 local CurrentTween = nil
+local CurrentStabilizer = nil
+local CurrentBodyVelocity = nil  -- للتوافق
 
 -- مستوى الماء (أي هدف فوق هذا المستوى يتم تجاهله)
 local WATER_LEVEL = 2
@@ -128,15 +131,16 @@ local PriorityMap = {
     Mythic = 4
 }
 
--- ================== نظام التخزين المؤقت (Cache) لتجنب البحث المتكرر ==================
+-- ================== نظام التخزين المؤقت (Cache) وتجاهل الأهداف القديمة ==================
 local TargetCache = {
     Time = 0,
     List = {}
 }
-local CACHE_DURATION = 6  -- تحديث كل 6 ثوانٍ
+local CACHE_DURATION = 4  -- تحديث كل 4 ثوانٍ
 
--- جدول لتخزين وقت أول ظهور لكل كائن (باستخدام weak keys لتجنب تسريب الذاكرة)
+-- جدول لتخزين وقت أول ظهور لكل كائن (باستخدام weak keys)
 local targetFirstSeen = setmetatable({}, {__mode = "k"})
+local IGNORE_TIME = 60  -- تجاهل الهدف بعد 60 ثانية من ظهوره
 
 -- ================== دالة الطباعة للتصحيح ==================
 local function DebugPrint(...)
@@ -151,6 +155,10 @@ local function RemoveStabilizer()
         CurrentStabilizer:Destroy()
         CurrentStabilizer = nil
     end
+end
+
+-- ================== دالة إزالة المحركات ==================
+local function RemoveCurrentMovers()
     if CurrentBodyVelocity and CurrentBodyVelocity.Parent then
         CurrentBodyVelocity:Destroy()
         CurrentBodyVelocity = nil
@@ -159,9 +167,10 @@ local function RemoveStabilizer()
         CurrentTween:Cancel()
         CurrentTween = nil
     end
+    RemoveStabilizer()
 end
 
--- ================== دالة تثبيت اللاعب في المكان ==================
+-- ================== دالة تثبيت اللاعب في المكان (محسنة) ==================
 local function StabilizePlayer(position)
     local character = LocalPlayer.Character
     if not character then return end
@@ -170,59 +179,48 @@ local function StabilizePlayer(position)
 
     RemoveStabilizer()
 
+    -- BodyPosition بقوة معتدلة وتخميد عالٍ لمنع الطيران
     local bp = Instance.new("BodyPosition")
     bp.Parent = hrp
     bp.MaxForce = Vector3.new(9e9, 9e9, 9e9)
-    bp.P = 50000
-    bp.D = 5000
+    bp.P = 25000   -- قوة متوسطة
+    bp.D = 10000   -- تخميد عالٍ
     bp.Position = position
 
     CurrentStabilizer = bp
     DebugPrint("تم تثبيت اللاعب في", position)
-end
 
--- ================== دالة الحركة باستخدام Tween (أكثر سلاسة) ==================
-local function MoveToPositionTween(targetPosition, duration)
-    local character = LocalPlayer.Character
-    if not character then return false end
-    local hrp = character:FindFirstChild("HumanoidRootPart")
-    if not hrp then return false end
-    
-    RemoveStabilizer()
-    
-    local tweenInfo = TweenInfo.new(
-        duration,
-        Enum.EasingStyle.Linear,
-        Enum.EasingDirection.Out,
-        0,
-        false,
-        0
-    )
-    
-    local goal = {CFrame = CFrame.new(targetPosition)}
-    local tween = TweenService:Create(hrp, tweenInfo, goal)
-    CurrentTween = tween
-    tween:Play()
-    
-    local success = false
-    local startTime = tick()
-    while tween.PlaybackState == Enum.PlaybackState.Playing do
-        if tick() - startTime > duration + 2 then
-            tween:Cancel()
-            break
+    -- إزالة تلقائية بعد 7 ثوانٍ
+    task.spawn(function()
+        task.wait(7)
+        if CurrentStabilizer then
+            DebugPrint("إزالة التثبيت بعد 7 ثوانٍ")
+            RemoveStabilizer()
         end
-        task.wait()
-    end
-    
-    success = (hrp.Position - targetPosition).Magnitude < 3  -- تقليل المسموح به للوصول
-    CurrentTween = nil
-    return success
+    end)
 end
 
--- ================== دالة الحركة السلسة (بسرعة ثابتة 60) مع تحسين تحت/فوق البحر ==================
-local function MoveToPositionSmooth(targetPosition, stabilize)
-    stabilize = stabilize == nil and true or stabilize
+-- ================== دالة إصلاح الكاميرا ==================
+local function FixCamera()
+    pcall(function()
+        local camera = workspace.CurrentCamera
+        if camera then
+            -- إعادة تعيين نوع الكاميرا لفرض التحديث
+            camera.CameraType = Enum.CameraType.Custom
+            camera.CameraType = Enum.CameraType.Follow
+            if LocalPlayer.Character then
+                local humanoid = LocalPlayer.Character:FindFirstChild("Humanoid")
+                if humanoid then
+                    camera.CameraSubject = humanoid
+                end
+            end
+            DebugPrint("تم إصلاح الكاميرا")
+        end
+    end)
+end
 
+-- ================== دالة الحركة باستخدام Tween مع تحكم دقيق بالسرعة ==================
+local function MoveToTarget(targetPosition)
     local character = LocalPlayer.Character
     if not character then DebugPrint("لا يوجد شخصية") return false end
     local hrp = character:FindFirstChild("HumanoidRootPart")
@@ -230,149 +228,112 @@ local function MoveToPositionSmooth(targetPosition, stabilize)
     local humanoid = character:FindFirstChild("Humanoid")
     if not humanoid then DebugPrint("لا يوجد Humanoid") return false end
 
-    RemoveStabilizer()
+    RemoveCurrentMovers()
 
+    -- إلغاء أي حركة سابقة
     hrp.Velocity = Vector3.new(0,0,0)
-    for _, v in ipairs(hrp:GetChildren()) do
-        if v:IsA("BodyMover") then
-            v:Destroy()
-        end
+
+    -- حساب المسافة والوقت
+    local startPos = hrp.Position
+    local distance = (targetPosition - startPos).Magnitude
+    if distance < 1 then
+        DebugPrint("بالفعل عند الهدف")
+        return true
     end
 
-    local originalNoclip = _G.Noclip
-    _G.Noclip = true
+    -- المرحلة الأولى: تحرك سريع حتى مسافة SLOW_DISTANCE
+    local function fastPhase()
+        if distance <= SLOW_DISTANCE then return true end
+        local fastTarget = startPos + (targetPosition - startPos).Unit * (distance - SLOW_DISTANCE)
+        local fastTime = (distance - SLOW_DISTANCE) / NAVIGATION_SPEED
+        DebugPrint("مرحلة سريعة: المسافة", (fastTarget - startPos).Magnitude, "الوقت", fastTime)
 
-    -- حساب المسافة وتقدير الوقت
-    local distance = (targetPosition - hrp.Position).Magnitude
-    local estimatedTime = distance / NAVIGATION_SPEED
-    
-    -- إذا كانت المسافة صغيرة، استخدم Tween
-    if distance < 30 then
-        DebugPrint("مسافة قصيرة، استخدام Tween")
-        local success = MoveToPositionTween(targetPosition, estimatedTime)
-        _G.Noclip = originalNoclip
-        if stabilize and success then
-            StabilizePlayer(targetPosition)
-        end
-        return success
-    end
+        local tweenInfo = TweenInfo.new(
+            fastTime,
+            Enum.EasingStyle.Linear,
+            Enum.EasingDirection.Out,
+            0,
+            false,
+            0
+        )
+        local goal = {CFrame = CFrame.new(fastTarget)}
+        local tween = TweenService:Create(hrp, tweenInfo, goal)
+        CurrentTween = tween
+        tween:Play()
 
-    -- للمسافات الطويلة، استخدم BodyVelocity مع تحسينات
-    local bv = Instance.new("BodyVelocity")
-    bv.Parent = hrp
-    bv.MaxForce = Vector3.new(9e9,9e9,9e9)
-    bv.P = 30000
-    CurrentBodyVelocity = bv
-
-    local startTime = tick()
-    local maxDuration = math.min(60, estimatedTime * 1.5)
-    local lastDistance = distance
-    local stuckCounter = 0
-    local completed = false
-    local lastPosition = hrp.Position
-    local samePositionCounter = 0
-
-    while _G.Running do
-        local currentPos = hrp.Position
-        local currentDistance = (targetPosition - currentPos).Magnitude
-
-        -- التحقق من الوصول (نزيد الدقة)
-        if currentDistance < 2.0 then
-            DebugPrint("وصلنا إلى الهدف، المسافة:", currentDistance)
-            completed = true
-            break
-        end
-
-        -- التحقق من الوقت
-        if tick() - startTime > maxDuration then
-            DebugPrint("انتهى وقت الحركة")
-            break
-        end
-
-        -- التحقق من الانحشار
-        if math.abs(lastDistance - currentDistance) < 0.2 then
-            stuckCounter = stuckCounter + 1
-        else
-            stuckCounter = 0
-        end
-        lastDistance = currentDistance
-
-        -- التحقق من الوقوف في نفس المكان
-        if (currentPos - lastPosition).Magnitude < 0.1 then
-            samePositionCounter = samePositionCounter + 1
-        else
-            samePositionCounter = 0
-        end
-        lastPosition = currentPos
-
-        -- إذا كان عالقاً، حاول القفز أو الدوران
-        if stuckCounter > 30 or samePositionCounter > 50 then
-            DebugPrint("انحشار، نحاول فكه")
-            hrp.Velocity = Vector3.new(0, 50, 0)
-            task.wait(0.2)
-            
-            local randomDir = Vector3.new(math.random(-10,10)/10, 0, math.random(-10,10)/10).Unit
-            bv.Velocity = randomDir * NAVIGATION_SPEED
-            task.wait(0.5)
-            
-            stuckCounter = 0
-            samePositionCounter = 0
-            continue
-        end
-
-        -- حساب اتجاه الحركة
-        local direction = (targetPosition - currentPos).Unit
-        
-        -- تعديل الارتفاع تدريجياً (إذا كان الهدف تحت الماء ونحن فوق، ننزل)
-        if currentPos.Y > WATER_LEVEL and targetPosition.Y < WATER_LEVEL then
-            direction = Vector3.new(direction.X, -0.3, direction.Z).Unit
-        end
-        
-        bv.Velocity = direction * NAVIGATION_SPEED
-
-        -- تفعيل Noclip
-        for _, part in ipairs(character:GetDescendants()) do
-            if part:IsA("BasePart") then
-                part.CanCollide = false
+        local start = tick()
+        while tween.PlaybackState == Enum.PlaybackState.Playing do
+            if (hrp.Position - targetPosition).Magnitude <= SLOW_DISTANCE then
+                tween:Cancel()
+                break
             end
+            if tick() - start > fastTime + 2 then
+                DebugPrint("تجاوز الوقت في المرحلة السريعة")
+                break
+            end
+            task.wait()
         end
-
-        task.wait(0.05)
+        CurrentTween = nil
+        return true
     end
 
-    if CurrentBodyVelocity then
-        CurrentBodyVelocity:Destroy()
-        CurrentBodyVelocity = nil
-    end
-    
-    hrp.Velocity = Vector3.new(0,0,0)
-    _G.Noclip = originalNoclip
+    -- المرحلة الثانية: تحرك بطيء حتى الهدف
+    local function slowPhase()
+        local currentPos = hrp.Position
+        local remainingDist = (targetPosition - currentPos).Magnitude
+        if remainingDist <= 1 then return true end
 
-    -- تصحيح الموقع النهائي (نضبط CFrame بدقة)
-    local finalPos = targetPosition
-    if finalPos.Y < -500 then
-        finalPos = Vector3.new(finalPos.X, -490, finalPos.Z)
+        local slowTime = remainingDist / SLOW_SPEED
+        DebugPrint("مرحلة بطيئة: المسافة", remainingDist, "الوقت", slowTime)
+
+        local tweenInfo = TweenInfo.new(
+            slowTime,
+            Enum.EasingStyle.Linear,
+            Enum.EasingDirection.Out,
+            0,
+            false,
+            0
+        )
+        local goal = {CFrame = CFrame.new(targetPosition)}
+        local tween = TweenService:Create(hrp, tweenInfo, goal)
+        CurrentTween = tween
+        tween:Play()
+
+        local start = tick()
+        while tween.PlaybackState == Enum.PlaybackState.Playing do
+            if (hrp.Position - targetPosition).Magnitude <= 1.5 then
+                tween:Cancel()
+                break
+            end
+            if tick() - start > slowTime + 2 then
+                DebugPrint("تجاوز الوقت في المرحلة البطيئة")
+                break
+            end
+            task.wait()
+        end
+        CurrentTween = nil
+        return true
     end
 
-    hrp.CFrame = CFrame.new(finalPos)
+    -- تنفيذ المراحل
+    fastPhase()
+    slowPhase()
+
+    -- التأكد من الوصول
+    hrp.CFrame = CFrame.new(targetPosition)
     task.wait(0.1)
-
-    if stabilize and completed then
-        StabilizePlayer(finalPos)
-    else
-        RemoveStabilizer()
-    end
-
-    DebugPrint("تمت الحركة إلى", finalPos, "التثبيت:", stabilize, "مكتملة:", completed)
-    return completed
+    DebugPrint("وصلنا إلى", targetPosition)
+    return true
 end
 
--- ================== العودة إلى القاعدة (بارتفاع 50) ==================
+-- ================== العودة إلى القاعدة (بارتفاع 50) مع إصلاح الكاميرا ==================
 local BasePosition = Vector3.new(-45, 38, -510)
 local function ReturnToBase()
     DebugPrint("بدء العودة إلى القاعدة")
     _G.ReturningToBase = true
-    MoveToPositionSmooth(BasePosition + Vector3.new(0, 50, 0), false)
+    MoveToTarget(BasePosition + Vector3.new(0, 50, 0))
+    -- إصلاح الكاميرا بعد الوصول
+    FixCamera()
     _G.ReturningToBase = false
     DebugPrint("اكتملت العودة إلى القاعدة")
 end
@@ -420,7 +381,7 @@ local function InteractWithObject(obj, maxAttempts)
     return false
 end
 
--- ================== البحث عن الأهداف تحت الماء فقط حسب النوع (مع التحقق من وجود تفاعل) ==================
+-- ================== البحث عن الأهداف تحت الماء فقط حسب النوع ==================
 local function FindTargetsByType(targetType)
     local char = LocalPlayer.Character
     if not char then return {} end
@@ -451,27 +412,14 @@ local function FindTargetsByType(targetType)
 
                 -- فقط الأهداف التي تكون تحت الماء (Y < WATER_LEVEL)
                 if pos and pos.Y < WATER_LEVEL then
-                    -- التحقق من وجود ClickDetector أو ProximityPrompt داخل الكائن
-                    local hasInteraction = false
-                    for _, descendant in ipairs(obj:GetDescendants()) do
-                        if descendant:IsA("ClickDetector") or descendant:IsA("ProximityPrompt") then
-                            hasInteraction = true
-                            break
-                        end
-                    end
-
-                    if hasInteraction then
-                        table.insert(targets, {
-                            Object = obj,
-                            Position = pos,
-                            Distance = (hrp.Position - pos).Magnitude,
-                            Type = keyword,
-                            Priority = PriorityMap[targetType] or 5
-                        })
-                        DebugPrint("هدف " .. keyword .. " صالح تحت الماء:", obj.Name, "عند Y:", pos.Y)
-                    else
-                        DebugPrint("تم تجاهل " .. keyword .. " لأنه لا يحتوي على ClickDetector/ProximityPrompt:", obj.Name)
-                    end
+                    table.insert(targets, {
+                        Object = obj,
+                        Position = pos,
+                        Distance = (hrp.Position - pos).Magnitude,
+                        Type = keyword,
+                        Priority = PriorityMap[targetType] or 5
+                    })
+                    DebugPrint("هدف " .. keyword .. " تحت الماء:", obj.Name, "عند Y:", pos.Y)
                 end
             end
         end
@@ -534,21 +482,20 @@ local function GetAllActiveTargets()
         end
     end)
     
-    -- تطبيق شرط الـ 90 ثانية: استبعاد الأهداف القديمة
+    -- تطبيق شرط الـ 60 ثانية: استبعاد الأهداف القديمة
     local now = tick()
     local filteredTargets = {}
     for _, t in ipairs(targets) do
         local obj = t.Object
         if not targetFirstSeen[obj] then
-            -- أول مرة نرى هذا الهدف
             targetFirstSeen[obj] = now
         end
         
         local timeSinceFirstSeen = now - targetFirstSeen[obj]
-        if timeSinceFirstSeen <= 90 then
+        if timeSinceFirstSeen <= IGNORE_TIME then
             table.insert(filteredTargets, t)
         else
-            DebugPrint("تجاهل هدف " .. t.Type .. " بسبب مرور 90 ثانية دون جمعه")
+            DebugPrint("تجاهل هدف " .. t.Type .. " بسبب مرور " .. IGNORE_TIME .. " ثانية دون جمعه")
         end
     end
     
@@ -566,7 +513,7 @@ task.spawn(function()
     local retryCount = 0
 
     while _G.Running do
-        task.wait(3.5)
+        task.wait(4.0)  -- ننتظر 4 ثوانٍ
 
         pcall(function()
             local anyEnabled = _G.AutoPickupDivine or _G.AutoPickupSecret or _G.AutoPickupLimited or _G.AutoPickupExotic or _G.AutoPickupMythic
@@ -584,7 +531,7 @@ task.spawn(function()
             local allTargets = GetAllActiveTargets()
 
             if #allTargets == 0 then
-                DebugPrint("لا توجد أهداف تحت الماء مفعلة حالياً (أو كلها تجاوزت 90 ثانية)")
+                DebugPrint("لا توجد أهداف تحت الماء مفعلة حالياً")
                 failedAttempts = failedAttempts + 1
                 if failedAttempts > 5 then
                     task.wait(3)
@@ -619,14 +566,19 @@ task.spawn(function()
                     retryCount = 0
                 end
 
-                -- التوجه إلى موقع الهدف بالضبط (بدون إضافة 2)
+                -- نضيف 7 على Y لكي نقف فوق الهدف بمسافة
                 local targetPos = target.Position
-                local moveSuccess = MoveToPositionSmooth(targetPos, true)
+                local approachPos = Vector3.new(targetPos.X, targetPos.Y + 7, targetPos.Z)
+
+                local moveSuccess = MoveToTarget(approachPos)
 
                 if moveSuccess then
+                    -- تثبيت اللاعب في المكان
+                    StabilizePlayer(approachPos)
                     task.wait(0.5)
                     InteractWithObject(target.Object, 3)
                     task.wait(0.5)
+                    RemoveStabilizer()
                 else
                     DebugPrint("فشل التحرك إلى الهدف، ننتقل للهدف التالي")
                 end
@@ -636,6 +588,22 @@ task.spawn(function()
             ReturnToBase()
 
             _G.FarmBusy = false
+        end)
+    end
+end)
+
+-- ================== Noclip دائم (شغال طول الوقت) ==================
+task.spawn(function()
+    while _G.Running do
+        task.wait(0.3)
+        pcall(function()
+            if LocalPlayer.Character then
+                for _, part in ipairs(LocalPlayer.Character:GetDescendants()) do
+                    if part:IsA("BasePart") then
+                        part.CanCollide = false
+                    end
+                end
+            end
         end)
     end
 end)
@@ -712,20 +680,6 @@ task.spawn(function()
     end
 end)
 
--- ================== Noclip ==================
-task.spawn(function()
-    while _G.Running do
-        task.wait(1.0)
-        pcall(function()
-            if _G.Noclip and LocalPlayer.Character then
-                for _, p in ipairs(LocalPlayer.Character:GetDescendants()) do
-                    if p:IsA("BasePart") then p.CanCollide = false end
-                end
-            end
-        end)
-    end
-end)
-
 -- ================== Speed ==================
 task.spawn(function()
     while _G.Running do
@@ -770,7 +724,7 @@ local function CreateUI()
     local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
     local Window = Rayfield:CreateWindow({
         Name = "Diving For Brainrots | Skan_Dev",
-        LoadingTitle = "Ultimate Script (Optimized + 90s Ignore + Interaction Check + Exact Position)",
+        LoadingTitle = "Ultimate Script (Slow Down Near Target)",
         LoadingSubtitle = "Account: " .. LocalPlayer.Name,
     })
 
@@ -871,15 +825,6 @@ local function CreateUI()
     -- تبويب Misc
     local MiscTab = Window:CreateTab("Misc", 4483362458)
 
-    local noclipToggle = MiscTab:CreateToggle({
-        Name = "🚀 Noclip (R)",
-        CurrentValue = _G.Noclip,
-        Callback = function(s)
-            _G.Noclip = s
-            SaveSettings()
-        end,
-    })
-
     local antiAfkToggle = MiscTab:CreateToggle({
         Name = "🛡️ Anti Afk",
         CurrentValue = _G.AntiAfk,
@@ -938,7 +883,6 @@ local function CreateUI()
         Name = "📂 Load Settings",
         Callback = function()
             LoadSettings()
-            noclipToggle:Set(_G.Noclip)
             antiAfkToggle:Set(_G.AntiAfk)
             speedToggle:Set(_G.SpeedEnabled)
             speedSlider:Set(_G.SpeedValue)
@@ -955,7 +899,7 @@ local function CreateUI()
         Name = "❌ Destroy UI",
         Callback = function()
             _G.Running = false
-            RemoveStabilizer()
+            RemoveCurrentMovers()
             SaveSettings()
             Rayfield:Destroy()
             task.wait(1)
@@ -966,11 +910,7 @@ local function CreateUI()
     -- اختصارات لوحة المفاتيح
     UserInputService.InputBegan:Connect(function(input, gp)
         if gp then return end
-        if input.KeyCode == Enum.KeyCode.R then
-            _G.Noclip = not _G.Noclip
-            noclipToggle:Set(_G.Noclip)
-            SaveSettings()
-        elseif input.KeyCode == Enum.KeyCode.T then
+        if input.KeyCode == Enum.KeyCode.T then
             task.spawn(ReturnToBase)
         elseif input.KeyCode == Enum.KeyCode.G then
             _G.SpeedEnabled = not _G.SpeedEnabled
@@ -982,14 +922,16 @@ end
 
 task.spawn(CreateUI)
 
-end) -- نهاية NoErrors
+end)
 
 print("✅ Diving For Brainrots Loaded Successfully!")
 print("👤 Owner: Skan_Dev")
 print("🌊 الهدف: فقط الأهداف تحت الماء (Y < 2)")
 print("💎 أولوية: Divine > Secret > Limited > Exotic > Mythic")
 print("🎯 يتم جمع أول هدفين فقط ثم العودة للقاعدة")
-print("⏱️ إذا مر 90 ثانية على الهدف دون جمعه، يتم تجاهله")
-print("🔄 تحديث الكاش كل 6 ثوانٍ")
-print("🔍 تحسين: يتم الآن التأكد من وجود ClickDetector/ProximityPrompt في الهدف قبل الذهاب إليه")
-print("📍 تحسين: التوجه إلى موقع الهدف بالضبط (بدون إضافة أي مسافة)")
+print("⏱️ البحث عن الأهداف كل 4 ثوانٍ - تجاهل الهدف بعد 60 ثانية من ظهوره")
+print("🚀 سرعة التحرك: 100 (مع تباطؤ تدريجي إلى 10 عند الاقتراب من الهدف)")
+print("🛑 Noclip دائم (شغال 24/7)")
+print("📍 يتم التوجه إلى Y+7 وتثبيت اللاعب هناك")
+print("🛡️ تم تحسين الثبات باستخدام Tween وتثبيت محكم")
+print("📷 تم إصلاح مشكلة الكاميرا عند العودة للقاعدة")
